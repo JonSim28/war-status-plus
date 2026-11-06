@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.43
+// @version      5.44
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.43';
+  const WSP_VERSION = '5.44';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -707,7 +707,7 @@
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins3_' + S.war.war.start + '_' + S.enemy.ID;
+    const key = 'wsp_wins4_' + S.war.war.start + '_' + S.enemy.ID;
     if (!winsState || winsState.key !== key) {
       winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
       winsState.n = winsState.n || {};   // our member id -> successful war hits
@@ -737,9 +737,9 @@
     }
   }
   // API v2 attack log, newest first within [from, to], shaped like v1 attacks
-  async function attacksV2(from, to) {
+  async function attacksV2(from, to, dir) {
     const key = getKey();
-    const j = await getJSON(`https://api.torn.com/v2/faction/attacks?from=${from}&to=${to}&limit=100&sort=DESC&striptags=true&key=${key}&comment=WarStatusPlus`);
+    const j = await getJSON(`https://api.torn.com/v2/faction/attacks?from=${from}&to=${to}&limit=100&sort=DESC${dir ? '&filters=' + dir : ''}&striptags=true&key=${key}&comment=WarStatusPlus`);
     if (j.error) { const e = new Error(j.error.error); e.code = j.error.code; throw e; }
     if (!Array.isArray(j.attacks)) throw new Error('unexpected v2 reply');
     return j.attacks.map(a => ({
@@ -752,11 +752,17 @@
       timestamp_started: a.started || a.timestamp_started || 0
     }));
   }
-  async function pageBack(to, floor, maxPages) { // read older attacks; returns where to carry on (0 = finished)
+  // The v2 log can be split into our attacks (outgoing) and attacks on us (incoming); read both
+  const atkDirs = () => (S.noAtkV2 ? [''] : S.noDirFilter ? [''] : ['outgoing', 'incoming']);
+  async function pageBack(to, floor, maxPages, dir) { // read older attacks; returns where to carry on (0 = finished)
     for (let i = 0; i < maxPages; i++) {
+      if (S.noDirFilter) dir = '';
       let list;
       if (!S.noAtkV2) {
-        try { list = await attacksV2(floor, to); } catch (e) { S.noAtkV2 = true; }
+        try { list = await attacksV2(floor, to, dir); } catch (e) {
+          if (dir && !S.noDirFilter) { S.noDirFilter = true; try { list = await attacksV2(floor, to, ''); } catch (e2) { S.noAtkV2 = true; } }
+          else S.noAtkV2 = true;
+        }
       }
       if (!list) list = Object.values((await api('faction/', `attacks&from=${floor}&to=${to}`)).attacks || {});
       addWins(list);
@@ -774,9 +780,14 @@
     const ts = latest.map(a => a.timestamp_started).filter(Boolean);
     if (ts.length) {
       const newest = Math.max(...ts), oldest = Math.min(...ts), start = S.war.war.start;
-      if (latest.length >= 100 && ws.upTo && oldest > ws.upTo) await pageBack(oldest - 1, ws.upTo, 10); // fill a gap
-      if (ws.backTo == null) ws.backTo = latest.length >= 100 ? oldest - 1 : 0;                        // first run
-      if (ws.backTo > start) ws.backTo = await pageBack(ws.backTo, start, 10);                        // back to the war start
+      ws.back = ws.back || {};
+      for (const d0 of atkDirs()) {
+        const dir = S.noDirFilter ? '' : d0;
+        if (latest.length >= 100 && ws.upTo && oldest > ws.upTo) await pageBack(oldest - 1, ws.upTo, 10, dir); // fill a gap
+        if (ws.back[dir] == null) ws.back[dir] = latest.length >= 100 ? oldest - 1 : 0;                      // first run
+        if (ws.back[dir] > start) ws.back[dir] = await pageBack(ws.back[dir], start, 10, dir);              // back to the war start
+      }
+      ws.backTo = Math.max(0, ...atkDirs().map(d => ws.back[d] || 0));
       ws.upTo = Math.max(ws.upTo || 0, newest);
     }
     save(ws.key, ws);
