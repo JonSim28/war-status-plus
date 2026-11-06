@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.36
+// @version      5.37
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.36';
+  const WSP_VERSION = '5.37';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -580,6 +580,7 @@
         S.enemy = enemy;
         loadFF(Object.keys(enemy.members || {}).concat(Object.keys((S.mine && S.mine.members) || {})));
         await loadRetals();
+        loadRevives(eid).catch(() => { /* optional */ });
       } else {
         S.enemy = null;
       }
@@ -618,6 +619,41 @@
   // Anyone who successfully hit a member of your faction in the last 5 minutes, and hasn't been hit back yet.
   const RETAL_SECS = 300;
   const HIT_OK = /attacked|mugged|hospitali[sz]ed|arrested|looted|special/i;
+  // Revive settings (API v2 faction members): enemies anyone can revive, and our members who still have revives on.
+  // One call per faction every 3 minutes.
+  S.rev = load('wsp_rev', {});
+  async function loadRevives(eid) {
+    if (Date.now() - (S.revAt || 0) < 180000) return;
+    S.revAt = Date.now();
+    const key = getKey();
+    if (!key) return;
+    const ids = [eid, S.mine && S.mine.ID].filter(Boolean);
+    for (const fid of ids) {
+      try {
+        const j = await getJSON(`https://api.torn.com/v2/faction/${fid}/members?striptags=true&key=${key}&comment=WarStatusPlus`);
+        if (j.error) { S.revErr = j.error.error; continue; }
+        (j.members || []).forEach(m => {
+          if (!m || m.id == null) return;
+          S.rev[m.id] = { rv: m.is_revivable === true, set: m.revive_setting || '', at: Date.now() };
+        });
+        S.revErr = '';
+      } catch (e) { S.revErr = e.message; }
+    }
+    save('wsp_rev', S.rev);
+    S.dirty = true;
+  }
+  function revTag(id, kind) {
+    const r = S.rev && S.rev[id];
+    if (!r || Date.now() - r.at > 30 * 60e3) return '';
+    const on = r.set ? !/no ?one/i.test(r.set) : r.rv;
+    if (!on) return '';
+    // enemies: anyone (or their faction) can bring them back early; ours: they should switch revives off
+    const who = r.set ? r.set : 'Revivable';
+    return kind === 'enemy'
+      ? `<small class="wsp-rev en" title="Revives: ${esc(who)}">REV</small>`
+      : `<small class="wsp-rev us" title="Revives: ${esc(who)} \u2014 turn them off during war">REV ON</small>`;
+  }
+
   async function loadRetals() {
     if (!S.mine || Date.now() < S.retalOff) return;
     try {
@@ -926,6 +962,9 @@
   .wsp-trv i{font-style:normal;font-weight:700;color:var(--travel);flex:0 0 auto;}
   .wsp-meta.wsp-fly{color:var(--travel);font-weight:600;}
   .wsp-fly.guess{opacity:.75;}
+  .wsp-rev{display:inline-block;margin-left:5px;padding:0 4px;border-radius:3px;font-size:9px;font-weight:800;letter-spacing:.4px;line-height:14px;vertical-align:1px;}
+  .wsp-rev.en{background:rgba(255,176,0,.18);color:#ffb000;border:1px solid rgba(255,176,0,.5);}
+  .wsp-rev.us{background:rgba(255,77,77,.18);color:#ff6b6b;border:1px solid rgba(255,77,77,.55);}
   .wsp-meta{display:block;font-size:9.5px;line-height:1.15;color:var(--muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   .wsp-name .wsp-retal{color:#fff;background:var(--hot);border-radius:3px;padding:0 3px;opacity:1;font-weight:700;}
   .wsp-next{display:flex;gap:5px;align-items:center;padding:5px 8px;overflow-x:auto;border-bottom:1px solid var(--line);background:var(--surface);-webkit-overflow-scrolling:touch;}
@@ -1938,7 +1977,7 @@
         : '<span></span>';
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
-      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
+      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
       ${kind === 'enemy' ? ffCell(id) + liveCell(id) : ''}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
