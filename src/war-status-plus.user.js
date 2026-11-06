@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.45
+// @version      5.46
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.45';
+  const WSP_VERSION = '5.46';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -653,10 +653,11 @@
     if (!(S.war && S.war.war && S.war.war.start && S.war.war.start * 1000 <= Date.now())) return '';
     if (kind === 'enemy') {
       const n = hitsOnUs(id);
-      return n ? `<small class="wsp-wt en" title="Hit our members ${n} times this war">\u{1F3AF}${n}</small>` : '';
+      const r = respOnUs(id);
+      return n ? `<small class="wsp-wt en" title="Hit our members ${n} times this war for ${r.toFixed(2)} respect">\u{1F3AF}${n}${r ? ' \u00b7 ' + fmtR(r) : ''}</small>` : '';
     }
-    const n = warHits(id);
-    return n == null ? '' : `<small class="wsp-wt us${n ? '' : ' zero'}" title="${n} war hits">\u2694\ufe0f${n}</small>`;
+    const n = warHits(id), r = respByUs(id);
+    return n == null ? '' : `<small class="wsp-wt us${n ? '' : ' zero'}" title="${n} war hits, ${r.toFixed(2)} respect">\u2694\ufe0f${n}${r ? ' \u00b7 ' + fmtR(r) : ''}</small>`;
   }
   function revTag(id, kind) {
     const r = S.rev && S.rev[id];
@@ -707,7 +708,7 @@
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins4_' + S.war.war.start + '_' + S.enemy.ID;
+    const key = 'wsp_wins5_' + S.war.war.start + '_' + S.enemy.ID;
     if (!winsState || winsState.key !== key) {
       winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
       winsState.n = winsState.n || {};   // our member id -> successful war hits
@@ -723,7 +724,9 @@
     for (const a of list) {
       ws.read = (ws.read || 0) + 1;
       if (a.result) { ws.res = ws.res || {}; if (Object.keys(ws.res).length < 20 || ws.res[a.result]) ws.res[a.result] = (ws.res[a.result] || 0) + 1; }
-      if (!a.attacker_id || !HIT_OK.test(a.result || '') || (a.timestamp_started || 0) < start) continue;
+      // a war hit = a win, or anything that earned respect (whatever Torn calls the result)
+      const rs = +a.respect_gain || +a.respect || 0;
+      if (!a.attacker_id || !(HIT_OK.test(a.result || '') || rs > 0) || (a.timestamp_started || 0) < start) continue;
       const af = String(a.attacker_faction), df = String(a.defender_faction);
       const ours = af === us && df === them, theirs = af === them && df === us;
       if (!ours && !theirs) continue;
@@ -735,8 +738,10 @@
       if (ours) {
         (ws.w[a.attacker_id] = ws.w[a.attacker_id] || {})[a.defender_id] = 1;
         ws.n[a.attacker_id] = (ws.n[a.attacker_id] || 0) + 1;
+        ws.nr = ws.nr || {}; ws.nr[a.attacker_id] = (ws.nr[a.attacker_id] || 0) + rs;
       } else {
         ws.by[a.attacker_id] = (ws.by[a.attacker_id] || 0) + 1;
+        ws.byr = ws.byr || {}; ws.byr[a.attacker_id] = (ws.byr[a.attacker_id] || 0) + rs;
       }
     }
   }
@@ -753,6 +758,8 @@
       defender_id: a.defender && a.defender.id,
       defender_faction: a.defender && a.defender.faction ? a.defender.faction.id : 0,
       result: a.result || '',
+      respect_gain: +(a.respect_gain != null ? a.respect_gain : a.modifiers && a.modifiers.respect) || 0,
+      chain: a.chain || 0,
       timestamp_started: a.started || a.timestamp_started || 0
     }));
   }
@@ -799,6 +806,9 @@
   }
   const warHits = id => { const ws = winsLoad(); return ws ? ws.n[id] || 0 : null; };
   const hitsOnUs = id => { const ws = winsLoad(); return ws ? ws.by[id] || 0 : 0; };
+  const respOnUs = id => { const ws = winsLoad(); return ws && ws.byr ? ws.byr[id] || 0 : 0; };
+  const respByUs = id => { const ws = winsLoad(); return ws && ws.nr ? ws.nr[id] || 0 : 0; };
+  const fmtR = r => (r >= 1000 ? (r / 1000).toFixed(1) + 'k' : r >= 100 ? Math.round(r) : r.toFixed(r >= 10 ? 0 : 1)) + 'r';
   const hasBeaten = (ours, theirs) => { const ws = winsLoad(); return !!(ws && ws.w[ours] && ws.w[ours][theirs]); };
 
   const retalLeft = id => (S.retals[id] ? S.retals[id].until - Date.now() / 1000 : 0);
