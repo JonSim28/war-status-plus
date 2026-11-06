@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.31
+// @version      5.32
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.31';
+  const WSP_VERSION = '5.32';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1546,6 +1546,7 @@
     '#wsp-ref': () => { refresh(); if (cfg.callsUrl) loadCalls(); },
     '.wsp-toast': el => {
       el.remove();
+      if (el.dataset.reload) { location.reload(); return; }
       if (!el.dataset.copy) { toggle(true); return; }
       const row = cogTry && cogTry.row;
       if (!row) return;
@@ -1638,9 +1639,8 @@
       }
       case 'ffshow': { const i = $('wsp-c-ffKey'); i.type = i.type === 'password' ? 'text' : 'password'; return; }
       case 'update':
-        try { localStorage.setItem('wsp_code_chk', '0'); } catch (err) { /* ignore */ }
-        toast('\u21bb Checking for an update and reloading\u2026');
-        setTimeout(() => location.reload(), 600);
+        toast('\u21bb Checking for an update\u2026');
+        checkUpdate(true);
         return;
       case 'testsound': unlockAudio(); setTimeout(() => { beep(true); buzz(true); }, 50); toast('🔔 Test alert', true); break;
       case 'load': {
@@ -2212,6 +2212,52 @@
   setTimeout(() => window.WarStatusPlus.addTab({ id: 'call', label: 'Call', render: callHTML, onAction: callAction }), 0);
 
   try { window.dispatchEvent(new Event('warstatusplus:ready')); } catch (e) { /* old browser */ }
+
+  // Auto-updates: while running, look at a tiny version.txt next to the script every 2 minutes.
+  // When it's newer, download the script into the loader's cache and offer a one-tap reload.
+  let updReady = '';
+  async function checkUpdate(manual) {
+    if (!FROM_LOADER) return;
+    const base = FROM_LOADER.replace(/[^/]*$/, '');
+    const bust = 't=' + Date.now();
+    try {
+      let v = '';
+      try {
+        const r = await fetch(base + 'version.txt?' + bust, { cache: 'no-store' });
+        v = (await r.text()).trim();
+      } catch (e) {
+        if (typeof PDA_httpGet === 'function') v = String((await PDA_httpGet(base + 'version.txt?' + bust)).responseText || '').trim();
+      }
+      if (!/^\d+(\.\d+)*$/.test(v)) throw new Error('no version file');
+      const newer = v.split('.').map(Number).reduce((acc, n, i) => acc !== 0 ? acc : n - (+(WSP_VERSION.split('.')[i] || 0)), 0) > 0;
+      if (!newer) { if (manual) toast(`\u2705 You're on the latest version (v${WSP_VERSION})`); return; }
+      if (updReady === v) { if (manual) location.reload(); return; }
+      let code = '';
+      try {
+        const r = await fetch(FROM_LOADER + (FROM_LOADER.includes('?') ? '&' : '?') + bust, { cache: 'no-store' });
+        code = await r.text();
+      } catch (e) {
+        if (typeof PDA_httpGet === 'function') code = String((await PDA_httpGet(FROM_LOADER + '?' + bust)).responseText || '');
+      }
+      // GitHub's cache can lag a minute behind version.txt; only accept the copy that really is the new version
+      if (code.length < 20000 || !code.includes('WarStatusPlus') || !code.includes(`WSP_VERSION="${v}"`) && !code.includes(`@version      ${v}`)) {
+        if (manual) toast('\u23f3 New version is on its way, try again in a minute');
+        return;
+      }
+      try { localStorage.setItem('wsp_code', code); localStorage.setItem('wsp_code_chk', String(Date.now())); } catch (e) { return; }
+      updReady = v;
+      if (manual) { location.reload(); return; }
+      const t = document.createElement('div');
+      t.className = 'wsp-toast';
+      t.dataset.reload = '1';
+      t.textContent = `\u2b06\ufe0f v${v} is ready \u2014 tap here to load it (or it loads on your next page)`;
+      toasts.appendChild(t);
+      setTimeout(() => t.remove(), 60000);
+    } catch (e) {
+      if (manual) toast('Could not check for updates right now');
+    }
+  }
+  if (FROM_LOADER) { setTimeout(checkUpdate, 15000); setInterval(() => { if (!document.hidden) checkUpdate(); }, 120000); }
 
   // Tell people when an auto-update has landed
   {
