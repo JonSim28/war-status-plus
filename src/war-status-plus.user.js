@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.34
+// @version      5.35
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.34';
+  const WSP_VERSION = '5.35';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -61,7 +61,7 @@
 
   const DEFAULTS = {
     sound: true, vibrate: true, hospAlert: true, landAlert: true,
-    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', energyAlert: true, energyWarn: 10,
+    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', energyAlert: false, energyWarn: 10, energyCd: 60,
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
   const savedCfg = load('wsp_cfg', {});
@@ -69,6 +69,7 @@
   try { localStorage.setItem('wsp_flight_v2', '1'); } catch (e) { /* ignore */ }
   if (savedCfg.theme === 'auto' && !localStorage.getItem('wsp_theme_v2')) { savedCfg.theme = 'war'; }
   try { localStorage.setItem('wsp_theme_v2', '1'); } catch (e) { /* ignore */ }
+  if (!localStorage.getItem('wsp_en_v2')) { delete savedCfg.energyAlert; try { localStorage.setItem('wsp_en_v2', '1'); } catch (e) { /* ignore */ } }
   const cfg = Object.assign({}, DEFAULTS, savedCfg);
   if (typeof __wspPreset === 'object' && __wspPreset) for (const k in FACTION) if (__wspPreset[k] && !FACTION[k]) FACTION[k] = String(__wspPreset[k]);
   for (const k in FACTION) if (FACTION[k] && !savedCfg[k]) cfg[k] = FACTION[k]; // faction presets fill any blanks
@@ -822,8 +823,6 @@
     if (cfg.energyAlert && en && en.fulltime > 0 && S.barsAt) {
       const fullAt = S.barsAt + en.fulltime * 1000;
       const left = (fullAt - now) / 1000;
-      const warn = Math.max(0, +cfg.energyWarn || 0) * 60;
-      if (warn && left > 0 && left <= warn) fire(`en-warn-${Math.round(fullAt / 60000)}`, `\u26a1 Energy full in ${Math.ceil(left / 60)}m (${en.current}/${en.maximum}) \u2014 use it`);
       if (left <= 0 && left > -120) fire(`en-full-${Math.round(fullAt / 60000)}`, `\u26a1 Energy is full \u2014 regen is being wasted`, true);
     }
     const bonus = chainBonus();
@@ -968,6 +967,9 @@
   .wsp-bi.ok b{color:#3fbf6f;}
   .wsp-bi.full b{color:#ff4d4d;}
   .wsp-bi.enear b{color:#ffb000;} .wsp-bi.efull b{color:#ff4d4d;}
+  .wsp-bv{display:flex;flex-direction:column;line-height:1;}
+  .wsp-bv small{font-size:9px;font-weight:700;letter-spacing:.3px;margin-top:2px;color:#9fb3a3;}
+  .wsp-bi.enear .wsp-bv small{color:#ffb000;} .wsp-bi.efull .wsp-bv small{color:#ff4d4d;}
   .wsp-pill{width:1.6em;height:1.2em;display:block;margin:-2px 0 -1px;}
   .wsp-box{width:1.45em;height:1.35em;display:block;}
   .wsp-pb{display:flex;flex-direction:column;align-items:center;line-height:1;}
@@ -1758,11 +1760,15 @@
 
     const b = [];
     const el = (Date.now() - S.uAt) / 1000;
-    const bi = (icon, val, cls) => `<span class="wsp-bi${cls ? ' ' + cls : ''}"><i>${icon}</i><b>${val}</b></span>`;
+    const bi = (icon, val, cls, sub) => `<span class="wsp-bi${cls ? ' ' + cls : ''}"><i>${icon}</i>${sub ? `<span class="wsp-bv"><b>${val}</b><small>${sub}</small></span>` : `<b>${val}</b>`}</span>`;
     if (S.bars && S.bars.energy) {
       const en = S.bars.energy, eLeft = en.fulltime > 0 && S.barsAt ? en.fulltime - (Date.now() - S.barsAt) / 1000 : 0;
       const eCls = en.current === en.maximum || (en.fulltime > 0 && eLeft <= 0 && en.current <= en.maximum) ? 'efull' : eLeft > 0 && eLeft <= (+cfg.energyWarn || 0) * 60 ? 'enear' : '';
-      b.push(bi('⚡', `${en.current}<span class="mx">/${en.maximum}</span>`, eCls));
+      // countdown under the number from an hour out (Settings), counting to full
+      const cdFrom = Math.max(0, +cfg.energyCd || 0) * 60;
+      const eSub = eLeft > 0 && eLeft <= cdFrom && en.current < en.maximum ? 'full ' + (eLeft >= 3600 ? '1h' + String(Math.floor(eLeft % 3600 / 60)).padStart(2, '0') : eLeft >= 120 ? Math.ceil(eLeft / 60) + 'm' : fmt(eLeft))
+        : eCls === 'efull' ? 'FULL' : '';
+      b.push(bi('⚡', `${en.current}<span class="mx">/${en.maximum}</span>`, eCls, eSub));
     }
     if (S.bars && S.bars.life && S.bars.life.maximum) b.push(bi('❤️', `${Math.round(100 * S.bars.life.current / S.bars.life.maximum)}%`));
     if (S.cd) {
@@ -1941,8 +1947,11 @@
       ${ck('retalAlert', 'Retaliation chances')}
       ${ck('bonusAlert', 'Next hit is a chain bonus')}
       ${ck('drugAlert', 'Your drug cooldown is over')}
-      <label class="wsp-set"><input type="checkbox" id="wsp-c-energyAlert" ${cfg.energyAlert ? 'checked' : ''}> Energy full warning, minutes before
+      <label class="wsp-set">Energy countdown under ⚡ from (minutes before full)
+        <input type="number" id="wsp-c-energyCd" inputmode="numeric" value="${cfg.energyCd}" style="width:64px"></label>
+      <label class="wsp-set">…turns amber in the last (minutes)
         <input type="number" id="wsp-c-energyWarn" inputmode="numeric" value="${cfg.energyWarn}" style="width:64px"></label>
+      ${ck('energyAlert', 'Also pop up and beep when energy is full')}
       <label class="wsp-set"><input type="checkbox" id="wsp-c-chainAlert" ${cfg.chainAlert ? 'checked' : ''}> Chain warnings at 60s &amp; 30s from chain
         <input type="number" id="wsp-c-chainMin" inputmode="numeric" value="${cfg.chainMin}" style="width:64px"></label>
       ${ck('bg', 'Keep checking while docked (uses ~6 API calls/min)')}
@@ -1989,6 +1998,7 @@
     ['popups', 'sound', 'vibrate', 'hospAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'energyAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
     cfg.chainMin = Math.max(1, parseInt($('wsp-c-chainMin').value, 10) || 10);
     cfg.energyWarn = Math.max(0, Math.min(120, parseInt($('wsp-c-energyWarn').value, 10) || 0));
+    cfg.energyCd = Math.max(0, Math.min(600, parseInt($('wsp-c-energyCd').value, 10) || 0));
     cfg.flight = $('wsp-c-flight').value;
     cfg.theme = $('wsp-c-theme').value;
     cfg.med = $('wsp-c-med').value;
