@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.41
+// @version      5.42
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.41';
+  const WSP_VERSION = '5.42';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -648,6 +648,16 @@
     if (!r || Date.now() - r.at > 30 * 60e3 || !r.set) return true;
     return !/no ?one/i.test(r.set);
   }
+  // 🎯 on enemies: how often they've hit our members this war. ⚔ on ours: their war hits so far.
+  function warTag(id, kind) {
+    if (!(S.war && S.war.war && S.war.war.start && S.war.war.start * 1000 <= Date.now())) return '';
+    if (kind === 'enemy') {
+      const n = hitsOnUs(id);
+      return n ? `<small class="wsp-wt en" title="Hit our members ${n} times this war">\u{1F3AF}${n}</small>` : '';
+    }
+    const n = warHits(id);
+    return n == null ? '' : `<small class="wsp-wt us${n ? '' : ' zero'}" title="${n} war hits">\u2694\ufe0f${n}</small>`;
+  }
   function revTag(id, kind) {
     const r = S.rev && S.rev[id];
     if (!r || Date.now() - r.at > 30 * 60e3) return '';
@@ -697,8 +707,13 @@
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins_' + S.war.war.start + '_' + S.enemy.ID;
-    if (!winsState || winsState.key !== key) winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
+    const key = 'wsp_wins2_' + S.war.war.start + '_' + S.enemy.ID;
+    if (!winsState || winsState.key !== key) {
+      winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
+      winsState.n = winsState.n || {};   // our member id -> successful war hits
+      winsState.by = winsState.by || {}; // enemy id -> successful hits on our members
+      winsState.seen = winsState.seen || {};
+    }
     return winsState;
   }
   function addWins(list) {
@@ -706,9 +721,19 @@
     if (!ws) return;
     const us = String(S.mine.ID), them = String(S.enemy.ID), start = S.war.war.start;
     for (const a of list) {
-      if (String(a.attacker_faction) !== us || String(a.defender_faction) !== them) continue;
       if (!a.attacker_id || !HIT_OK.test(a.result || '') || (a.timestamp_started || 0) < start) continue;
-      (ws.w[a.attacker_id] = ws.w[a.attacker_id] || {})[a.defender_id] = 1;
+      const af = String(a.attacker_faction), df = String(a.defender_faction);
+      const ours = af === us && df === them, theirs = af === them && df === us;
+      if (!ours && !theirs) continue;
+      const k = a.code || `${a.timestamp_started}-${a.attacker_id}-${a.defender_id}`;
+      if (ws.seen[k]) continue; // pages overlap; count each attack once
+      ws.seen[k] = 1;
+      if (ours) {
+        (ws.w[a.attacker_id] = ws.w[a.attacker_id] || {})[a.defender_id] = 1;
+        ws.n[a.attacker_id] = (ws.n[a.attacker_id] || 0) + 1;
+      } else {
+        ws.by[a.attacker_id] = (ws.by[a.attacker_id] || 0) + 1;
+      }
     }
   }
   async function pageBack(to, floor, maxPages) { // read older attacks; returns where to carry on (0 = finished)
@@ -738,6 +763,8 @@
     save(ws.key, ws);
     S.dirty = true;
   }
+  const warHits = id => { const ws = winsLoad(); return ws ? ws.n[id] || 0 : null; };
+  const hitsOnUs = id => { const ws = winsLoad(); return ws ? ws.by[id] || 0 : 0; };
   const hasBeaten = (ours, theirs) => { const ws = winsLoad(); return !!(ws && ws.w[ours] && ws.w[ours][theirs]); };
 
   const retalLeft = id => (S.retals[id] ? S.retals[id].until - Date.now() / 1000 : 0);
@@ -969,6 +996,8 @@
   .wsp-trv i{font-style:normal;font-weight:700;color:var(--travel);flex:0 0 auto;}
   .wsp-meta.wsp-fly{color:var(--travel);font-weight:600;}
   .wsp-fly.guess{opacity:.75;}
+  .wsp-wt{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px;}
+  .wsp-wt.en{color:#ff8a8a;} .wsp-wt.us{color:#9fd8ae;} .wsp-wt.us.zero{color:var(--muted);opacity:.8;}
   .wsp-rev{display:inline-block;margin-left:5px;padding:0 4px;border-radius:3px;font-size:9px;font-weight:800;letter-spacing:.4px;line-height:14px;vertical-align:1px;}
   .wsp-rev.en{background:rgba(255,176,0,.18);color:#ffb000;border:1px solid rgba(255,176,0,.5);}
   .wsp-rev.us{background:rgba(255,77,77,.18);color:#ff6b6b;border:1px solid rgba(255,77,77,.55);}
@@ -1002,7 +1031,7 @@
   .wsp-crow.beaten{background:rgba(31,157,85,.18) !important;box-shadow:inset 3px 0 0 #1f9d55;}
   .wsp-crow .ck{color:#3fbf6f;margin-right:3px;}
   .wsp-crow.sel{background:var(--accentSoft) !important;box-shadow:inset 3px 0 0 var(--accent);}
-  .wsp-lead{font-weight:700;} .wsp-lead.ahead{color:#5ee38f;} .wsp-lead.behind{color:#ff8a8a;}
+  .wsp-lead{font-weight:700;} .wsp-lead.ahead{color:#5ee38f;} .wsp-lead.behind{color:#ff8a8a;} .wsp-lead.soon{color:#ffd23f;}
   .wsp-frow.them .n{opacity:.8;}
   #wsp-sub{font-size:10.5px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   #wsp-head button{background:none;border:none;color:var(--headText);font-size:14px;padding:2px 5px;cursor:pointer;}
@@ -1800,7 +1829,12 @@
     const loc = myLocation();
     const parts = [];
     if (loc) parts.push(esc(`You: ${flag(loc)} ${short(loc)}`));
-    if (war && S.war.war && S.war.war.target) {
+    const wStart = S.war && S.war.war && S.war.war.start;
+    if (wStart && wStart * 1000 > Date.now()) {
+      const left = wStart - Date.now() / 1000;
+      const d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600), m = Math.floor(left % 3600 / 60);
+      parts.unshift(`<span class="wsp-lead soon">\u23f3 War in ${d ? d + 'd ' : ''}${d || h ? h + 'h ' : ''}${m}m</span>`); // first, so it never gets cut off
+    } else if (war && S.war.war && S.war.war.target) {
       const diff = ourScore - theirScore;
       const cls = diff > 0 ? 'ahead' : diff < 0 ? 'behind' : '';
       const mark = diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '';
@@ -1984,7 +2018,7 @@
         : '<span></span>';
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
-      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
+      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
       ${kind === 'enemy' ? ffCell(id) + liveCell(id) : ''}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
