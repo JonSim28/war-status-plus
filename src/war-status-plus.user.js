@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.35
+// @version      5.36
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.35';
+  const WSP_VERSION = '5.36';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -908,6 +908,10 @@
   #wsp-title{font-weight:600;font-size:13px;}
   .wsp-frow{display:flex;align-items:baseline;gap:8px;white-space:nowrap;line-height:1.3;}
   .wsp-frow .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .wsp-frow .o{display:inline-flex;align-items:center;justify-content:flex-end;min-width:62px;gap:3px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;opacity:.9;align-self:center;}
+  .wsp-frow .o i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:4px;}
+  .wsp-frow .o i:first-child{margin-left:0;}
+  .wsp-frow .o i.g{background:#3fbf6f;} .wsp-frow .o i.y{background:#ffb000;}
   .wsp-frow .s{font-weight:700;min-width:42px;text-align:right;font-variant-numeric:tabular-nums;}
   .wsp-frow .c{min-width:74px;text-align:right;font-size:11px;font-weight:600;opacity:.85;font-variant-numeric:tabular-nums;}
   .wsp-frow .c.hot{color:#fff;background:var(--hot);border-radius:4px;padding:0 4px;opacity:1;animation:wspBlink 1s infinite;}
@@ -1719,15 +1723,22 @@
     }
     const theirChain = S.enemy && wf(S.enemy.ID) && wf(S.enemy.ID).chain ? `🔗${wf(S.enemy.ID).chain}` : '';
 
-    const row = (cls, name, score, chain, hot) => `<div class="wsp-frow ${cls}">
+    // online / idle tally from the member list we already have
+    const tally = f => {
+      let on = 0, idle = 0;
+      Object.values((f && f.members) || {}).forEach(m => { const st = m.last_action && m.last_action.status; if (st === 'Online') on++; else if (st === 'Idle') idle++; });
+      return f && f.members ? `<span class="o" title="Online / idle"><i class="g"></i>${on}<i class="y"></i>${idle}</span>` : '';
+    };
+    const row = (cls, name, score, chain, hot, f) => `<div class="wsp-frow ${cls}">
       <span class="n">${esc(name)}</span>
+      ${tally(f)}
       <span class="s">${score == null ? '' : Number(score).toLocaleString()}</span>
       <span class="c${hot ? ' hot' : ''}">${chain}</span></div>`;
     let title;
     if (S.mine || S.enemy) {
       const lead = war && ourScore !== theirScore ? (ourScore > theirScore ? 'us' : 'them') : '';
-      title = row('us' + (lead === 'us' ? ' lead' : lead ? ' trail' : ''), S.mine ? S.mine.name : 'Your faction', ourScore, ourChain, ourHot)
-        + (S.enemy ? row('them' + (lead === 'them' ? ' lead' : lead ? ' trail' : ''), S.enemy.name, theirScore, theirChain, false) : '');
+      title = row('us' + (lead === 'us' ? ' lead' : lead ? ' trail' : ''), S.mine ? S.mine.name : 'Your faction', ourScore, ourChain, ourHot, S.mine)
+        + (S.enemy ? row('them' + (lead === 'them' ? ' lead' : lead ? ' trail' : ''), S.enemy.name, theirScore, theirChain, false, S.enemy) : '');
     } else {
       title = '<div class="wsp-frow"><span class="n">⚔️ JSim War Station Plus</span></div>';
     }
