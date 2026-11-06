@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.47
+// @version      5.48
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.47';
+  const WSP_VERSION = '5.48';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -708,7 +708,7 @@
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins6_' + S.war.war.start + '_' + S.enemy.ID;
+    const key = 'wsp_wins7_' + S.war.war.start + '_' + S.enemy.ID;
     if (!winsState || winsState.key !== key) {
       winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
       winsState.n = winsState.n || {};   // our member id -> successful war hits
@@ -730,6 +730,8 @@
       if (!a.attacker_id || a.attacker_id === '0') {
         // stealthed: Torn hides who (and which faction) did it, so count it against nobody
         if (String(a.defender_faction) !== us) continue;
+        // only ranked war hits: other people (muggers, bounty hunters) also stealth-attack our members
+        if (a.ranked_war !== undefined && a.ranked_war !== null && !(+a.ranked_war)) continue;
         const ks = a.code || `${a.timestamp_started}-s-${a.defender_id}`;
         if (ws.seen[ks]) continue;
         ws.seen[ks] = 1;
@@ -770,6 +772,8 @@
       result: a.result || '',
       respect_gain: +(a.respect_gain != null ? a.respect_gain : a.modifiers && a.modifiers.respect) || 0,
       chain: a.chain || 0,
+      ranked_war: a.is_ranked_war === true ? 1 : a.is_ranked_war === false ? 0 : undefined,
+      stealthed: a.is_stealthed ? 1 : 0,
       timestamp_started: a.started || a.timestamp_started || 0
     }));
   }
@@ -1863,7 +1867,7 @@
     };
     const stealthTag = () => {
       const ws = winsLoad();
-      return ws && ws.stealth ? `<span class="st" title="${ws.stealth} stealthed hits on our members this war (${(ws.stealthR || 0).toFixed(1)} respect); Torn hides who made them">\u{1F575}\ufe0f${ws.stealth}</span>` : '';
+      return ws && ws.stealth ? `<span class="st" title="${ws.stealth} stealthed ranked war hits on our members (${(ws.stealthR || 0).toFixed(1)} respect); Torn hides who made them">\u{1F575}\ufe0f${ws.stealth}</span>` : '';
     };
     const row = (cls, name, score, chain, hot, f) => `<div class="wsp-frow ${cls}">
       <span class="n"><span class="nm">${esc(name)}</span>${cls.startsWith('them') ? stealthTag() : ''}</span>
@@ -2120,7 +2124,10 @@
         const src = S.noAtkV2 ? 'v1 log' : S.noDirFilter ? 'v2 log' : 'v2 log, both directions';
         const back = ws.backTo ? new Date(ws.backTo * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'war start';
         const res = Object.entries(ws.res || {}).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([r, n]) => esc(r) + ' ' + n).join(', ');
-        return `<div class="wsp-help">War hit counts: read ${ws.read || 0} attacks (${ws.cnt ? ws.cnt.o : 0} our wins, ${ws.cnt ? ws.cnt.i : 0} wins on us) from ${src}, back to ${back}${S.retalErr ? ' \u00b7 ' + esc(S.retalErr) : ''}.<br>Results seen: ${res || 'none yet'}</div>`;
+        const onUs = Object.values(ws.byr || {}).reduce((x, y) => x + y, 0) + (ws.stealthR || 0);
+        const theirScore = S.war && S.enemy && S.war.factions && S.war.factions[S.enemy.ID] ? S.war.factions[S.enemy.ID].score : null;
+        return `<div class="wsp-help">Respect counted on us: ${Math.round(onUs).toLocaleString()} (named ${Math.round(onUs - (ws.stealthR || 0)).toLocaleString()} + stealthed ${Math.round(ws.stealthR || 0).toLocaleString()} from ${ws.stealth || 0} hits)${theirScore != null ? ` vs their war score ${Number(theirScore).toLocaleString()}` : ''}.</div>
+        <div class="wsp-help">War hit counts: read ${ws.read || 0} attacks (${ws.cnt ? ws.cnt.o : 0} our wins, ${ws.cnt ? ws.cnt.i : 0} wins on us) from ${src}, back to ${back}${S.retalErr ? ' \u00b7 ' + esc(S.retalErr) : ''}.<br>Results seen: ${res || 'none yet'}</div>`;
       })()}
       <div class="wsp-grp">Display</div>
       <label class="wsp-set">Default flight type <select id="wsp-c-flight">${opts}</select></label>
