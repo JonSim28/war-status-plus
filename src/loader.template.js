@@ -1,18 +1,18 @@
 // ==UserScript==
-// @name         War Status+ (auto-updating)
+// @name         JSim War Station Plus (auto-updating)
 // @namespace    torn-war-status-plus
 // @version      1.0
-// @description  Loads the latest War Status+ from your faction's script address, so updates arrive by themselves
+// @description  Loads the latest JSim War Station Plus from your faction's script address, so updates arrive by themselves
 // @match        https://www.torn.com/*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
 
 /*
- * This small script fetches War Status+ from the address below and keeps a copy on your device,
+ * This small script fetches JSim War Station Plus from the address below and keeps a copy on your device,
  * so it starts instantly and still works if the address can't be reached.
  * It checks for a newer copy every few minutes; a new version is used from the next page you open.
- * Your API key stays on your device: PDA puts it into this loader and the loader hands it straight to War Status+.
+ * Your API key stays on your device: PDA puts it into this loader and the loader hands it straight to JSim War Station Plus.
  */
 (function () {
   'use strict';
@@ -31,7 +31,7 @@
       new Function('__wspPdaKey', '__wspPreset', '__wspFrom', code)(KEY, PRESET, SRC);
     } catch (e) {
       var why = String(e && (e.name + ' ' + e.message));
-      if (!/unsafe-eval|Content Security|EvalError|call to Function/i.test(why)) { console.error('War Status+:', e); return; }
+      if (!/unsafe-eval|Content Security|EvalError|call to Function/i.test(why)) { console.error('JSim War Station Plus:', e); return; }
       // The page doesn't allow eval: run it as a script tag instead
       window.__wspPdaKey = KEY; window.__wspPreset = PRESET; window.__wspFrom = SRC;
       var s = document.createElement('script');

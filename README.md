@@ -1,4 +1,4 @@
-# War Status+
+# JSim War Station Plus
 
 A Torn ranked-war panel for TornPDA.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         War Status+ (pop-out)
+// @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.27
+// @version      5.28
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.27';
+  const WSP_VERSION = '5.28';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -78,7 +78,7 @@
     if (!PDA_KEY.startsWith('###')) return PDA_KEY;
     let k = localStorage.getItem('wsp_key');
     if (!k) {
-      k = prompt('War Status+: enter your Torn API key (Limited access recommended for bars, cooldowns and hits)');
+      k = prompt('JSim War Station Plus: enter your Torn API key (Limited access recommended for bars, cooldowns and hits)');
       if (k) localStorage.setItem('wsp_key', k.trim());
     }
     return k ? k.trim() : null;
@@ -1065,7 +1065,7 @@
   panel.id = 'wsp-panel';
   panel.innerHTML = `
     <div id="wsp-head">
-      <div id="wsp-title">⚔️ War Status</div>
+      <div id="wsp-title">⚔️ JSim War Station Plus</div>
       <div class="wsp-hbar">
         <div id="wsp-sub"></div>
         <button id="wsp-ref" title="Refresh">⟳</button>
@@ -1666,7 +1666,7 @@
       title = row('us' + (lead === 'us' ? ' lead' : lead ? ' trail' : ''), S.mine ? S.mine.name : 'Your faction', ourScore, ourChain, ourHot)
         + (S.enemy ? row('them' + (lead === 'them' ? ' lead' : lead ? ' trail' : ''), S.enemy.name, theirScore, theirChain, false) : '');
     } else {
-      title = '<div class="wsp-frow"><span class="n">⚔️ War Status</span></div>';
+      title = '<div class="wsp-frow"><span class="n">⚔️ JSim War Station Plus</span></div>';
     }
     if ($('wsp-title').innerHTML !== title) $('wsp-title').innerHTML = title;
 
@@ -1908,7 +1908,7 @@
       <label class="wsp-set wide">Tracker password<input id="wsp-c-trackerPw" value="${esc(cfg.trackerPw)}"></label>
       <div class="wsp-help">${S.trackErr ? '⚠️ ' + esc(S.trackErr) + '<br>' : S.trackDataAt ? `✓ Connected — tracker last checked ${fmtM(Date.now() / 1000 - S.trackDataAt)} ago.<br>` : ''}Optional. Gives accurate ETAs for flights that started while PDA was closed.</div>
       <div class="wsp-actions"><button data-act="testsound">Test alert</button><button data-act="save" class="pri">Save</button></div>
-      <div class="wsp-help" style="text-align:center;padding:10px;opacity:.6">War Status+ v${WSP_VERSION}${FROM_LOADER ? ' \u00b7 auto-updates on' : ''}</div>
+      <div class="wsp-help" style="text-align:center;padding:10px;opacity:.6">JSim War Station Plus v${WSP_VERSION}${FROM_LOADER ? ' \u00b7 auto-updates on' : ''}</div>
       ${FROM_LOADER ? '<div class="wsp-actions"><button data-act="update">Check for update now</button></div>' : ''}`;
   }
 
@@ -2193,7 +2193,7 @@
   // Tell people when an auto-update has landed
   {
     const lastV = load('wsp_lastver', null);
-    if (lastV && lastV !== WSP_VERSION) setTimeout(() => toast(`\u2705 War Status+ updated to v${WSP_VERSION}`), 2000);
+    if (lastV && lastV !== WSP_VERSION) setTimeout(() => toast(`\u2705 JSim War Station Plus updated to v${WSP_VERSION}`), 2000);
     save('wsp_lastver', WSP_VERSION);
   }
 
@@ -2396,7 +2396,7 @@
       const intel2 = intelSrc;
       if (intel2.err === 'notracker') return side === 'own'
         ? '<div class="wsp-msg">To see your own faction, set up a second tracker with <b>WATCH = \'own\'</b> on another free Google account, then add its URL in Settings &rarr; Own faction tracker.</div>'
-        : '<div class="wsp-msg">Intel needs the War Status+ tracker.<br>Add its web app URL in Settings &rarr; Tracker, then tap Save.</div>';
+        : '<div class="wsp-msg">Intel needs the JSim War Station Plus tracker.<br>Add its web app URL in Settings &rarr; Tracker, then tap Save.</div>';
       if (intel2.err === 'oldtracker') return '<div class="wsp-msg">Your tracker is the older version.<br>Paste the new tracker code into Google Apps Script, run <b>setup</b>, then redeploy it as a new version.</div>';
       if (intel2.err && !intel2.data) return `<div class="wsp-msg">${W.esc(intel2.err)}</div>`;
       if (!intel2.data) { tick(); return '<div class="wsp-msg">Loading intel from your tracker...</div>'; }
