@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.28
+// @version      5.29
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.28';
+  const WSP_VERSION = '5.29';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -61,7 +61,7 @@
 
   const DEFAULTS = {
     sound: true, vibrate: true, hospAlert: true, landAlert: true,
-    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true,
+    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medAlert: false,
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
   const savedCfg = load('wsp_cfg', {});
@@ -774,6 +774,23 @@
           if (cfg.hospAlert) fire(`out-${id}-${st.until}`, `✅ ${m.name} is out of hospital`, true);
         }
       }
+    }
+    // Your own cooldowns running out (only if it ended in the last 2 minutes, so a fresh page doesn't nag)
+    if (S.cd && S.uAt) {
+      // remember when each cooldown ends, even after the API starts reporting 0
+      S.cdEnd = S.cdEnd || load('wsp_cdend', {});
+      ['drug', 'medical'].forEach(k => {
+        if (S.cd[k] > 0) {
+          const e = S.uAt + S.cd[k] * 1000;
+          if (Math.abs((S.cdEnd[k] || 0) - e) > 5000) { S.cdEnd[k] = e; save('wsp_cdend', S.cdEnd); }
+        }
+      });
+      const ready = (k, on, msg) => {
+        const end = S.cdEnd[k] || 0;
+        if (on && end && now >= end && now - end < 120000) fire(`${k}ready-${Math.round(end / 60000)}`, msg, true);
+      };
+      ready('drug', cfg.drugAlert, '\u{1F33F} Drug cooldown over \u2014 ready for your next Xanax');
+      ready('medical', cfg.medAlert, '\u{1F489} Medical cooldown over \u2014 you can use meds again');
     }
     const bonus = chainBonus();
     if (cfg.bonusAlert && bonus && bonus.hits === 1 && bonus.next >= 50) fire(`bonus-${bonus.next}`, `🎁 Next hit is chain bonus #${bonus.next} — make it count`);
@@ -1873,6 +1890,8 @@
       ${ck('landAlert', 'Enemy landing at your location')}
       ${ck('retalAlert', 'Retaliation chances')}
       ${ck('bonusAlert', 'Next hit is a chain bonus')}
+      ${ck('drugAlert', 'Your drug cooldown is over')}
+      ${ck('medAlert', 'Your medical cooldown is over')}
       <label class="wsp-set"><input type="checkbox" id="wsp-c-chainAlert" ${cfg.chainAlert ? 'checked' : ''}> Chain warnings at 60s &amp; 30s from chain
         <input type="number" id="wsp-c-chainMin" inputmode="numeric" value="${cfg.chainMin}" style="width:64px"></label>
       ${ck('bg', 'Keep checking while docked (uses ~6 API calls/min)')}
@@ -1913,7 +1932,7 @@
   }
 
   function saveSettings() {
-    ['popups', 'sound', 'vibrate', 'hospAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
+    ['popups', 'sound', 'vibrate', 'hospAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'medAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
     cfg.chainMin = Math.max(1, parseInt($('wsp-c-chainMin').value, 10) || 10);
     cfg.flight = $('wsp-c-flight').value;
     cfg.theme = $('wsp-c-theme').value;
