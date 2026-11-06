@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.38
+// @version      5.39
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.38';
+  const WSP_VERSION = '5.39';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -645,10 +645,8 @@
   function revTag(id, kind) {
     const r = S.rev && S.rev[id];
     if (!r || Date.now() - r.at > 30 * 60e3) return '';
-    // enemies: only when anyone can revive them (setting "Everyone"); ours: any setting other than "No one"
-    const on = kind === 'enemy'
-      ? (r.set ? /every/i.test(r.set) : r.rv)
-      : (r.set ? !/no ?one/i.test(r.set) : r.rv);
+    // only when anyone can revive them (setting "Everyone"), for both sides
+    const on = r.set ? /every/i.test(r.set) : (kind === 'enemy' && r.rv);
     if (!on) return '';
     // enemies: anyone (or their faction) can bring them back early; ours: they should switch revives off
     const who = r.set ? r.set : 'Revivable';
