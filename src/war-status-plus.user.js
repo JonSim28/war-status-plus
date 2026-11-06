@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.46
+// @version      5.47
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.46';
+  const WSP_VERSION = '5.47';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -654,10 +654,10 @@
     if (kind === 'enemy') {
       const n = hitsOnUs(id);
       const r = respOnUs(id);
-      return n ? `<small class="wsp-wt en" title="Hit our members ${n} times this war for ${r.toFixed(2)} respect">\u{1F3AF}${n}${r ? ' \u00b7 ' + fmtR(r) : ''}</small>` : '';
+      return n ? `<small class="wsp-wt en" title="Hit our members ${n} times this war for ${r.toFixed(2)} respect">\u{1F3AF}${n}</small>` : '';
     }
     const n = warHits(id), r = respByUs(id);
-    return n == null ? '' : `<small class="wsp-wt us${n ? '' : ' zero'}" title="${n} war hits, ${r.toFixed(2)} respect">\u2694\ufe0f${n}${r ? ' \u00b7 ' + fmtR(r) : ''}</small>`;
+    return n == null ? '' : `<small class="wsp-wt us${n ? '' : ' zero'}" title="${n} war hits, ${r.toFixed(2)} respect">\u2694\ufe0f${n}</small>`;
   }
   function revTag(id, kind) {
     const r = S.rev && S.rev[id];
@@ -708,7 +708,7 @@
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins5_' + S.war.war.start + '_' + S.enemy.ID;
+    const key = 'wsp_wins6_' + S.war.war.start + '_' + S.enemy.ID;
     if (!winsState || winsState.key !== key) {
       winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
       winsState.n = winsState.n || {};   // our member id -> successful war hits
@@ -726,7 +726,17 @@
       if (a.result) { ws.res = ws.res || {}; if (Object.keys(ws.res).length < 20 || ws.res[a.result]) ws.res[a.result] = (ws.res[a.result] || 0) + 1; }
       // a war hit = a win, or anything that earned respect (whatever Torn calls the result)
       const rs = +a.respect_gain || +a.respect || 0;
-      if (!a.attacker_id || !(HIT_OK.test(a.result || '') || rs > 0) || (a.timestamp_started || 0) < start) continue;
+      if (!(HIT_OK.test(a.result || '') || rs > 0) || (a.timestamp_started || 0) < start) continue;
+      if (!a.attacker_id || a.attacker_id === '0') {
+        // stealthed: Torn hides who (and which faction) did it, so count it against nobody
+        if (String(a.defender_faction) !== us) continue;
+        const ks = a.code || `${a.timestamp_started}-s-${a.defender_id}`;
+        if (ws.seen[ks]) continue;
+        ws.seen[ks] = 1;
+        ws.stealth = (ws.stealth || 0) + 1;
+        ws.stealthR = (ws.stealthR || 0) + rs;
+        continue;
+      }
       const af = String(a.attacker_faction), df = String(a.defender_faction);
       const ours = af === us && df === them, theirs = af === them && df === us;
       if (!ours && !theirs) continue;
@@ -1022,6 +1032,9 @@
   #wsp-title{font-weight:600;font-size:13px;}
   .wsp-frow{display:flex;align-items:baseline;gap:8px;white-space:nowrap;line-height:1.3;}
   .wsp-frow .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .wsp-frow .n{display:flex;align-items:baseline;}
+  .wsp-frow .n .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .wsp-frow .n .st{flex:0 0 auto;margin-left:8px;font-size:11px;font-weight:700;color:#c9b6ff;letter-spacing:0;text-transform:none;}
   .wsp-frow .o{display:inline-flex;align-items:center;justify-content:flex-end;min-width:62px;gap:3px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;opacity:.9;align-self:center;}
   .wsp-frow .o i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:4px;}
   .wsp-frow .o i:first-child{margin-left:0;}
@@ -1848,8 +1861,12 @@
       Object.values((f && f.members) || {}).forEach(m => { const st = m.last_action && m.last_action.status; if (st === 'Online') on++; else if (st === 'Idle') idle++; });
       return f && f.members ? `<span class="o" title="Online / idle"><i class="g"></i>${on}<i class="y"></i>${idle}</span>` : '';
     };
+    const stealthTag = () => {
+      const ws = winsLoad();
+      return ws && ws.stealth ? `<span class="st" title="${ws.stealth} stealthed hits on our members this war (${(ws.stealthR || 0).toFixed(1)} respect); Torn hides who made them">\u{1F575}\ufe0f${ws.stealth}</span>` : '';
+    };
     const row = (cls, name, score, chain, hot, f) => `<div class="wsp-frow ${cls}">
-      <span class="n">${esc(name)}</span>
+      <span class="n"><span class="nm">${esc(name)}</span>${cls.startsWith('them') ? stealthTag() : ''}</span>
       ${tally(f)}
       <span class="s">${score == null ? '' : Number(score).toLocaleString()}</span>
       <span class="c${hot ? ' hot' : ''}">${chain}</span></div>`;
