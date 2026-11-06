@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.29
+// @version      5.30
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.29';
+  const WSP_VERSION = '5.30';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -938,7 +938,10 @@
   .wsp-pb small{font-size:8px;font-weight:700;letter-spacing:.4px;margin-top:1px;}
   .wsp-quick{margin-left:auto;display:flex;gap:4px;flex:0 0 auto;}
   .wsp-leaf{vertical-align:-.18em;width:1.15em;height:1.15em;}
-  .wsp-quick{gap:3px !important;} .wsp-quick button{padding:2px 5px !important;letter-spacing:0 !important;}
+  .wsp-quick{gap:3px !important;align-items:stretch;}
+  .wsp-quick button{padding:2px 5px !important;letter-spacing:0 !important;height:auto !important;min-height:28px;max-height:none !important;line-height:1 !important;
+    display:inline-flex !important;align-items:center;justify-content:center;overflow:visible !important;box-sizing:border-box;margin:0 !important;}
+  .wsp-pb small{display:block;line-height:1 !important;}
   .wsp-quick button{border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:5px;padding:2px 6px;font:600 11px inherit;font-family:inherit;cursor:pointer;}
   .wsp-med-pref{outline:3px solid #ffb000 !important;outline-offset:-3px;background:rgba(255,176,0,.16) !important;box-shadow:0 0 12px rgba(255,176,0,.45) !important;}
   .wsp-med-ok{outline:2px dashed #3fbf6f !important;outline-offset:-2px;background:rgba(63,191,111,.10) !important;}
