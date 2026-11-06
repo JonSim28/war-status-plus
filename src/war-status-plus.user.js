@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.42
+// @version      5.43
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.42';
+  const WSP_VERSION = '5.43';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -707,7 +707,7 @@
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins2_' + S.war.war.start + '_' + S.enemy.ID;
+    const key = 'wsp_wins3_' + S.war.war.start + '_' + S.enemy.ID;
     if (!winsState || winsState.key !== key) {
       winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
       winsState.n = winsState.n || {};   // our member id -> successful war hits
@@ -736,10 +736,28 @@
       }
     }
   }
+  // API v2 attack log, newest first within [from, to], shaped like v1 attacks
+  async function attacksV2(from, to) {
+    const key = getKey();
+    const j = await getJSON(`https://api.torn.com/v2/faction/attacks?from=${from}&to=${to}&limit=100&sort=DESC&striptags=true&key=${key}&comment=WarStatusPlus`);
+    if (j.error) { const e = new Error(j.error.error); e.code = j.error.code; throw e; }
+    return (j.attacks || []).map(a => ({
+      code: a.code || a.id,
+      attacker_id: a.attacker && a.attacker.id,
+      attacker_faction: a.attacker && a.attacker.faction ? a.attacker.faction.id : 0,
+      defender_id: a.defender && a.defender.id,
+      defender_faction: a.defender && a.defender.faction ? a.defender.faction.id : 0,
+      result: a.result || '',
+      timestamp_started: a.started || a.timestamp_started || 0
+    }));
+  }
   async function pageBack(to, floor, maxPages) { // read older attacks; returns where to carry on (0 = finished)
     for (let i = 0; i < maxPages; i++) {
-      const j = await api('faction/', `attacks&from=${floor}&to=${to}`);
-      const list = Object.values(j.attacks || {});
+      let list;
+      if (!S.noAtkV2) {
+        try { list = await attacksV2(floor, to); } catch (e) { S.noAtkV2 = true; }
+      }
+      if (!list) list = Object.values((await api('faction/', `attacks&from=${floor}&to=${to}`)).attacks || {});
       addWins(list);
       const ts = list.map(a => a.timestamp_started).filter(Boolean);
       if (list.length < 100 || !ts.length || Math.max(...ts) > to) return 0; // done, or the range was ignored
@@ -757,7 +775,7 @@
       const newest = Math.max(...ts), oldest = Math.min(...ts), start = S.war.war.start;
       if (latest.length >= 100 && ws.upTo && oldest > ws.upTo) await pageBack(oldest - 1, ws.upTo, 10); // fill a gap
       if (ws.backTo == null) ws.backTo = latest.length >= 100 ? oldest - 1 : 0;                        // first run
-      if (ws.backTo > start) ws.backTo = await pageBack(ws.backTo, start, 5);                         // back to the war start
+      if (ws.backTo > start) ws.backTo = await pageBack(ws.backTo, start, 10);                        // back to the war start
       ws.upTo = Math.max(ws.upTo || 0, newest);
     }
     save(ws.key, ws);
@@ -1839,6 +1857,13 @@
       const cls = diff > 0 ? 'ahead' : diff < 0 ? 'behind' : '';
       const mark = diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '';
       parts.push(`<span class="wsp-lead ${cls}">${mark}Lead ${Math.abs(diff).toLocaleString()}/${S.war.war.target.toLocaleString()}</span>`);
+    }
+    { // war hit counts still reading back through the attack log
+      const ws = winsLoad(), st = S.war && S.war.war && S.war.war.start;
+      if (ws && st && st * 1000 < Date.now() && (ws.backTo == null || ws.backTo > st)) {
+        const pct = ws.backTo ? Math.max(0, Math.min(99, Math.round(100 * (Date.now() / 1000 - ws.backTo) / (Date.now() / 1000 - st)))) : 0;
+        parts.push(`counting hits ${pct}%`);
+      }
     }
     parts.push(S.loading ? 'updating…' : S.at ? Math.round((Date.now() - S.at) / 1000) + 's ago' : '');
     if (S.err) parts.push(esc('⚠️ ' + S.err));
