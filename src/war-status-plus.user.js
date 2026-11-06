@@ -741,7 +741,8 @@
     const key = getKey();
     const j = await getJSON(`https://api.torn.com/v2/faction/attacks?from=${from}&to=${to}&limit=100&sort=DESC&striptags=true&key=${key}&comment=WarStatusPlus`);
     if (j.error) { const e = new Error(j.error.error); e.code = j.error.code; throw e; }
-    return (j.attacks || []).map(a => ({
+    if (!Array.isArray(j.attacks)) throw new Error('unexpected v2 reply');
+    return j.attacks.map(a => ({
       code: a.code || a.id,
       attacker_id: a.attacker && a.attacker.id,
       attacker_faction: a.attacker && a.attacker.faction ? a.attacker.faction.id : 0,
