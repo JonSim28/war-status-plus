@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.44
+// @version      5.45
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.44';
+  const WSP_VERSION = '5.45';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -721,6 +721,8 @@
     if (!ws) return;
     const us = String(S.mine.ID), them = String(S.enemy.ID), start = S.war.war.start;
     for (const a of list) {
+      ws.read = (ws.read || 0) + 1;
+      if (a.result) { ws.res = ws.res || {}; if (Object.keys(ws.res).length < 20 || ws.res[a.result]) ws.res[a.result] = (ws.res[a.result] || 0) + 1; }
       if (!a.attacker_id || !HIT_OK.test(a.result || '') || (a.timestamp_started || 0) < start) continue;
       const af = String(a.attacker_faction), df = String(a.defender_faction);
       const ours = af === us && df === them, theirs = af === them && df === us;
@@ -728,6 +730,8 @@
       const k = a.code || `${a.timestamp_started}-${a.attacker_id}-${a.defender_id}`;
       if (ws.seen[k]) continue; // pages overlap; count each attack once
       ws.seen[k] = 1;
+      ws.cnt = ws.cnt || { o: 0, i: 0 };
+      if (ours) ws.cnt.o++; else ws.cnt.i++;
       if (ours) {
         (ws.w[a.attacker_id] = ws.w[a.attacker_id] || {})[a.defender_id] = 1;
         ws.n[a.attacker_id] = (ws.n[a.attacker_id] || 0) + 1;
@@ -2083,6 +2087,14 @@
       <label class="wsp-set"><input type="checkbox" id="wsp-c-chainAlert" ${cfg.chainAlert ? 'checked' : ''}> Chain warnings at 60s &amp; 30s from chain
         <input type="number" id="wsp-c-chainMin" inputmode="numeric" value="${cfg.chainMin}" style="width:64px"></label>
       ${ck('bg', 'Keep checking while docked (uses ~6 API calls/min)')}
+      ${(() => {
+        const ws = winsLoad();
+        if (!ws) return '';
+        const src = S.noAtkV2 ? 'v1 log' : S.noDirFilter ? 'v2 log' : 'v2 log, both directions';
+        const back = ws.backTo ? new Date(ws.backTo * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'war start';
+        const res = Object.entries(ws.res || {}).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([r, n]) => esc(r) + ' ' + n).join(', ');
+        return `<div class="wsp-help">War hit counts: read ${ws.read || 0} attacks (${ws.cnt ? ws.cnt.o : 0} our wins, ${ws.cnt ? ws.cnt.i : 0} wins on us) from ${src}, back to ${back}${S.retalErr ? ' \u00b7 ' + esc(S.retalErr) : ''}.<br>Results seen: ${res || 'none yet'}</div>`;
+      })()}
       <div class="wsp-grp">Display</div>
       <label class="wsp-set">Default flight type <select id="wsp-c-flight">${opts}</select></label>
       <div class="wsp-help">Only used when nothing better is known. Each enemy's own method comes first: timed from a real flight, a business class job perk, or an airstrip on their Private Island.</div>
