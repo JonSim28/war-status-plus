@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.50
+// @version      5.51
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.50';
+  const WSP_VERSION = '5.51';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -61,7 +61,7 @@
 
   const DEFAULTS = {
     sound: true, vibrate: true, hospAlert: true, landAlert: true,
-    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', energyAlert: false, energyWarn: 10, energyCd: 60,
+    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', fastCalls: 60, energyAlert: false, energyWarn: 10, energyCd: 60,
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
   const savedCfg = load('wsp_cfg', {});
@@ -575,6 +575,12 @@
       if (eid) {
         const prev = S.enemy && String(S.enemy.ID) === String(eid) ? S.enemy.members : null;
         const enemy = await api(`faction/${eid}`, 'basic');
+        // a fast check may already know someone left hospital; don't let an older faction reply put them back in
+        for (const [id, f] of Object.entries(S.fastSeen || {})) {
+          const m = enemy.members && enemy.members[id];
+          if (!m || Date.now() - f.at > 90000) continue;
+          if (m.status && m.status.state === 'Hospital' && f.status.state !== 'Hospital' && (m.status.until || 0) <= (f.until || 0)) m.status = f.status;
+        }
         track(enemy.members || {});
         transitions(prev, enemy.members || {});
         S.enemy = enemy;
@@ -911,6 +917,46 @@
         fire(`land-${id}-${a.description}`, `🛬 ${m.name} landed in ${short(myLoc)}`);
       }
     }
+  }
+
+  // Fast hospital watch: enemies in hospital at your location who are online or idle (the ones who can med out)
+  // get their own status checks in rotation, sharing a budget of cfg.fastCalls API calls a minute.
+  S.fast = { calls: 0, outs: 0, busy: false, next: 0, i: 0 };
+  async function fastTick(now) {
+    const per = +cfg.fastCalls || 0;
+    if (!per || S.fast.busy || now < S.fast.next) return;
+    if (!(S.war && S.war.war && S.war.war.start * 1000 <= now) || !S.enemy || !S.enemy.members) return;
+    const myLoc = myLocation();
+    if (!myLoc) return;
+    const ids = Object.keys(S.enemy.members).filter(id => {
+      const m = S.enemy.members[id], st = m.status || {}, la = (m.last_action || {}).status;
+      return st.state === 'Hospital' && (la === 'Online' || la === 'Idle') && where(st).loc === myLoc &&
+        (!st.until || st.until - now / 1000 > 5); // about to come out anyway: the timer already covers it
+    }).sort();
+    S.fast.watch = ids.length;
+    if (!ids.length) { S.fast.next = now + 2000; return; }
+    const id = ids[S.fast.i++ % ids.length];
+    S.fast.busy = true;
+    S.fast.next = now + 60000 / Math.min(90, Math.max(1, per));
+    try {
+      const u = await api(`user/${id}`, 'profile');
+      S.fast.calls++;
+      const old = S.enemy.members[id];
+      if (u && u.status && old) {
+        const upd = Object.assign({}, old, { status: u.status, last_action: u.last_action || old.last_action });
+        const was = old.status && old.status.state;
+        S.enemy.members[id] = upd;
+        if (was === 'Hospital' && u.status.state !== 'Hospital') {
+          S.fast.outs++;
+          (S.fastSeen = S.fastSeen || {})[id] = { status: u.status, until: old.status.until || 0, at: Date.now() };
+          transitions({ [id]: old }, { [id]: upd });
+        }
+        S.dirty = true;
+      }
+    } catch (e) {
+      S.fast.err = e.message;
+      if (/too many|limit/i.test(e.message)) S.fast.next = now + 30000; // back off if Torn says we're over
+    } finally { S.fast.busy = false; }
   }
 
   function checkAlerts() {
@@ -2110,6 +2156,9 @@
       ${ck('retalAlert', 'Retaliation chances')}
       ${ck('bonusAlert', 'Next hit is a chain bonus')}
       ${ck('drugAlert', 'Your drug cooldown is over')}
+      <label class="wsp-set">Fast hospital watch, API calls a minute
+        <input type="number" id="wsp-c-fastCalls" inputmode="numeric" value="${cfg.fastCalls}" style="width:64px"></label>
+      <div class="wsp-help">Checks online / idle enemies in hospital at your location one by one, so early med-outs show within seconds. Torn allows 100 calls a minute per key, shared with PDA and other scripts. 0 turns it off.${S.fast && S.fast.calls ? ` This session: ${S.fast.calls} checks, ${S.fast.outs} early exits caught${S.fast.watch != null ? ', watching ' + S.fast.watch + ' now' : ''}${S.fast.err ? ' \u00b7 last error: ' + esc(S.fast.err) : ''}.` : ''}</div>
       <label class="wsp-set">Energy countdown under ⚡ from (minutes before full)
         <input type="number" id="wsp-c-energyCd" inputmode="numeric" value="${cfg.energyCd}" style="width:64px"></label>
       <label class="wsp-set">…turns amber in the last (minutes)
@@ -2173,6 +2222,7 @@
     cfg.chainMin = Math.max(1, parseInt($('wsp-c-chainMin').value, 10) || 10);
     cfg.energyWarn = Math.max(0, Math.min(120, parseInt($('wsp-c-energyWarn').value, 10) || 0));
     cfg.energyCd = Math.max(0, Math.min(600, parseInt($('wsp-c-energyCd').value, 10) || 0));
+    cfg.fastCalls = Math.max(0, Math.min(90, parseInt($('wsp-c-fastCalls').value, 10) || 0));
     cfg.flight = $('wsp-c-flight').value;
     cfg.theme = $('wsp-c-theme').value;
     cfg.med = $('wsp-c-med').value;
@@ -2522,6 +2572,7 @@
         if (rem < 90 && rem > -30 && !S.chainLoading && now - S.chainAt > CHAIN_FAST_MS) refreshChain();
       }
       checkAlerts();
+      fastTick(now);
     }
     if (S.open && cfg.callsUrl && now - S.callsAt > CALLS_MS) loadCalls();
     const ad = S.open && S.view === 'list' && ADDONS[S.tab];
