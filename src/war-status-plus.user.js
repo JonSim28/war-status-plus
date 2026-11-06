@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.51
+// @version      5.52
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.51';
+  const WSP_VERSION = '5.52';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -877,17 +877,24 @@
 
   const toasts = document.createElement('div');
   toasts.id = 'wsp-toasts';
-  function toast(msg, urgent) {
+  function toast(msg, urgent, attackId) {
     const t = document.createElement('div');
     t.className = 'wsp-toast' + (urgent ? ' urgent' : '');
     t.textContent = msg;
+    if (attackId) { // a one-tap way to the attack page
+      const a = document.createElement('span');
+      a.className = 'wsp-tatk';
+      a.dataset.id = attackId;
+      a.textContent = 'ATTACK';
+      t.appendChild(a);
+    }
     toasts.appendChild(t);
     while (toasts.children.length > 4) toasts.firstChild.remove();
-    setTimeout(() => t.remove(), 7000);
+    setTimeout(() => t.remove(), attackId ? 15000 : 7000);
   }
 
   // Each alert fires once (shared across tabs/pages via localStorage); hidden tabs leave it to the visible one
-  function fire(key, msg, urgent) {
+  function fire(key, msg, urgent, attackId) {
     if (document.hidden) return;
     const f = load('wsp_fired', {});
     if (f[key]) return;
@@ -897,7 +904,7 @@
     save('wsp_fired', f);
     beep(urgent);
     buzz(urgent);
-    if (cfg.popups) toast(msg, urgent); // off: sound / vibrate only (if those are on)
+    if (cfg.popups) toast(msg, urgent, attackId); // off: sound / vibrate only (if those are on)
     if (!S.open) btn.classList.add('alert');
   }
 
@@ -911,10 +918,10 @@
       const wa = where(a), wb = where(b);
       if (a.state === 'Hospital' && (b.state === 'Okay' || b.state === 'Abroad') && wb.loc === myLoc) {
         S.outAt[id] = Date.now();
-        if (cfg.hospAlert) fire(`out-${id}-${a.until}`, `✅ ${m.name} is out of hospital`, true);
+        if (cfg.hospAlert) fire(`out-${id}-${a.until}`, `✅ ${m.name} is out of hospital`, true, id);
       }
       if (wa.travel && !wb.travel && wb.loc === myLoc && cfg.landAlert) {
-        fire(`land-${id}-${a.description}`, `🛬 ${m.name} landed in ${short(myLoc)}`);
+        fire(`land-${id}-${a.description}`, `🛬 ${m.name} landed in ${short(myLoc)}`, false, id);
       }
     }
   }
@@ -969,10 +976,10 @@
         const w = where(st);
         if (w.loc !== myLoc) continue;
         const left = st.until - now / 1000;
-        if (cfg.hospAlert && left > 0 && left <= 30) fire(`h30-${id}-${st.until}`, `🏥 ${m.name} out in ${Math.ceil(left)}s`);
+        if (cfg.hospAlert && left > 0 && left <= 30) fire(`h30-${id}-${st.until}`, `🏥 ${m.name} out in ${Math.ceil(left)}s`, false, id);
         if (left <= 0 && left > -60) {
           S.outAt[id] = S.outAt[id] || now;
-          if (cfg.hospAlert) fire(`out-${id}-${st.until}`, `✅ ${m.name} is out of hospital`, true);
+          if (cfg.hospAlert) fire(`out-${id}-${st.until}`, `✅ ${m.name} is out of hospital`, true, id);
         }
       }
     }
@@ -1068,6 +1075,7 @@
   @keyframes wspPulse{50%{transform:translateY(-50%) scale(1.12);}}
   #wsp-toasts{position:fixed;left:8px;bottom:calc(25% + 34px);display:flex;flex-direction:column;gap:6px;z-index:2147483002;max-width:80vw;}
   #wsp-toasts.top{bottom:auto;top:12px;left:50%;transform:translateX(-50%);}
+  .wsp-tatk{display:inline-block;margin-left:10px;padding:5px 10px;border-radius:4px;background:#c62828;color:#fff;font-weight:800;letter-spacing:.8px;font-size:12px;vertical-align:middle;cursor:pointer;}
   .wsp-toast{background:var(--head);color:var(--headText);padding:9px 12px;border-radius:10px;font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     box-shadow:0 4px 14px var(--shadow);cursor:pointer;border-left:4px solid var(--accent);}
   .wsp-toast.urgent{border-left-color:var(--hot);}
@@ -1769,6 +1777,11 @@
 
   // Tab / dock / refresh / toast taps are caught at document level so the page can't swallow them
   const ACTIONS = {
+    '.wsp-tatk': el => {
+      window.open(`https://www.torn.com/loader.php?sid=attack&user2ID=${el.dataset.id}`, '_blank');
+      const t = el.closest('.wsp-toast');
+      if (t) t.remove();
+    },
     '#wsp-btn': () => toggle(true),
     '#wsp-dock': () => toggle(false),
     '#wsp-ref': () => { refresh(); if (cfg.callsUrl) loadCalls(); },
