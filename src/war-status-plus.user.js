@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.32
+// @version      5.33
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.32';
+  const WSP_VERSION = '5.33';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -61,7 +61,7 @@
 
   const DEFAULTS = {
     sound: true, vibrate: true, hospAlert: true, landAlert: true,
-    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medAlert: false,
+    chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto',
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
   const savedCfg = load('wsp_cfg', {});
@@ -95,6 +95,31 @@
       if (post && typeof PDA_httpPost === 'function') return JSON.parse((await PDA_httpPost(url, opts.headers || {}, opts.body)).responseText);
       throw e;
     }
+  }
+
+  // Medical cooldown limit: 6h, raised by faction perks (Fortitude, up to 9h). Read from your perks every 6 hours.
+  const MED_BASE = 6 * 3600;
+  async function loadPerks() {
+    const c = load('wsp_perks', null);
+    if (c && Date.now() - c.at < 6 * 3600e3) return;
+    save('wsp_perks', { at: Date.now(), extra: c ? c.extra : 0, src: c ? c.src : '' }); // don't retry every refresh
+    try {
+      const j = await api('user/', 'perks');
+      let extra = 0; const src = [];
+      Object.values(j).forEach(list => (Array.isArray(list) ? list : []).forEach(t => {
+        t = String(t);
+        if (!/medical cooldown/i.test(t) || /reduc|decreas|less|lower/i.test(t)) return;
+        const h = t.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i), m = t.match(/(\d+)\s*(?:minutes?|mins?|m)\b/i);
+        const add = h ? +h[1] * 3600 : m ? +m[1] * 60 : 0;
+        if (add > 0 && add <= 6 * 3600) { extra += add; src.push(t); }
+      }));
+      save('wsp_perks', { at: Date.now(), extra, src: src.join('; ') });
+    } catch (e) { /* key may not allow perks: base limit is used */ }
+  }
+  function medCap() {
+    if (cfg.medCap && cfg.medCap !== 'auto') return (+cfg.medCap || 6) * 3600;
+    const c = load('wsp_perks', null);
+    return MED_BASE + Math.min(c && c.extra || 0, 6 * 3600);
   }
 
   // Torn can hand back a cached reply up to ~30s old. Asking for 'timestamp' too tells us how old it is.
@@ -528,6 +553,7 @@
       if (u.energy) S.bars = { energy: u.energy, life: u.life };
       setChain(u);
       if (u.cooldowns) S.cd = u.cooldowns;
+      loadPerks();
       if (u.attacks) S.attacks = u.attacks;
       S.uAt = Date.now();
 
@@ -790,7 +816,6 @@
         if (on && end && now >= end && now - end < 120000) fire(`${k}ready-${Math.round(end / 60000)}`, msg, true);
       };
       ready('drug', cfg.drugAlert, '\u{1F33F} Drug cooldown over \u2014 ready for your next Xanax');
-      ready('medical', cfg.medAlert, '\u{1F489} Medical cooldown over \u2014 you can use meds again');
     }
     const bonus = chainBonus();
     if (cfg.bonusAlert && bonus && bonus.hits === 1 && bonus.next >= 50) fire(`bonus-${bonus.next}`, `🎁 Next hit is chain bonus #${bonus.next} — make it count`);
@@ -932,6 +957,7 @@
   .wsp-bi b{font-weight:600;}
   @media (max-width:400px){ .wsp-bi .mx{display:none;} #wsp-barsv{gap:6px !important;} #wsp-bars{gap:6px !important;} .wsp-quick button{padding:2px 4px !important;} }
   .wsp-bi.ok b{color:#3fbf6f;}
+  .wsp-bi.full b{color:#ff4d4d;}
   .wsp-pill{width:1.6em;height:1.2em;display:block;margin:-2px 0 -1px;}
   .wsp-box{width:1.45em;height:1.35em;display:block;}
   .wsp-pb{display:flex;flex-direction:column;align-items:center;line-height:1;}
@@ -1460,6 +1486,10 @@
       const left = S.cd.drug - (Date.now() - S.uAt) / 1000;
       if (left > 0) label += ` \u00b7 <span style="color:#ff5a5a">drug cooldown ${fmt(left)}</span>`;
     }
+    if (!isDrug(W) && S.cd) {
+      const over = S.cd.medical - (Date.now() - S.uAt) / 1000 - medCap();
+      if (over >= 0) label += ` \u00b7 <span style="color:#ff5a5a">medical cooldown full, wait ${fmt(over)}</span>`;
+    }
     if (W === 'blood') {
       const extra = okTypes ? okTypes.filter(t => t !== cfg.blood) : null;
       label += okTypes ? (extra.length ? ` · also safe: <span class="o">${extra.join(', ')}</span>` : ' · only your own type is safe')
@@ -1726,7 +1756,9 @@
       // compact: 1h56m / 42m / 1:05 (seconds only in the last two minutes)
       const cdf = x => x >= 3600 ? Math.floor(x / 3600) + 'h' + String(Math.floor(x % 3600 / 60)).padStart(2, '0') + 'm' : x >= 120 ? Math.ceil(x / 60) + 'm' : fmt(x);
       b.push(bi(LEAF, d > 0 ? cdf(d) : '✓', d > 0 ? 'cd' : 'ok'));
-      b.push(bi('💉', m > 0 ? cdf(m) : '✓', m > 0 ? 'cd' : 'ok'));
+      // medical cooldown stacks: green while you're under your limit (you can still use meds), red once it's full
+      const cap = medCap();
+      b.push(bi('💉', m > 0 ? cdf(m) : '✓', m < cap ? 'ok' : 'full'));
     }
     const barsHTML = b.join(' ') || '<span style="color:var(--muted)">Loading your bars…</span>';
     if ($('wsp-barsv').innerHTML !== barsHTML) $('wsp-barsv').innerHTML = barsHTML;
@@ -1895,7 +1927,6 @@
       ${ck('retalAlert', 'Retaliation chances')}
       ${ck('bonusAlert', 'Next hit is a chain bonus')}
       ${ck('drugAlert', 'Your drug cooldown is over')}
-      ${ck('medAlert', 'Your medical cooldown is over')}
       <label class="wsp-set"><input type="checkbox" id="wsp-c-chainAlert" ${cfg.chainAlert ? 'checked' : ''}> Chain warnings at 60s &amp; 30s from chain
         <input type="number" id="wsp-c-chainMin" inputmode="numeric" value="${cfg.chainMin}" style="width:64px"></label>
       ${ck('bg', 'Keep checking while docked (uses ~6 API calls/min)')}
@@ -1909,6 +1940,9 @@
         <option value="">Not set</option>
         ${Object.keys(BLOOD_OK).map(t => `<option value="${t}" ${cfg.blood === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       <div class="wsp-help">Highlighted on the faction armoury's medical page. For blood bags, every bag safe for your blood type is highlighted too.</div>
+      <label class="wsp-set">Medical cooldown limit <select id="wsp-c-medCap">
+        ${[['auto', 'Auto (' + (medCap() / 3600).toFixed(medCap() % 3600 ? 1 : 0) + 'h from your perks)'], ['6', '6 hours'], ['7', '7 hours'], ['8', '8 hours'], ['9', '9 hours']].map(([k, v]) => `<option value="${k}" ${String(cfg.medCap || 'auto') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <div class="wsp-help">The 💉 timer is green while you can still use meds and red once your cooldown is at the limit. Faction perks can raise the 6-hour limit.</div>
       <div class="wsp-grp">Appearance</div>
       <label class="wsp-set">Theme <select id="wsp-c-theme">
         <option value="war" ${cfg.theme !== 'light' && cfg.theme !== 'auto' ? 'selected' : ''}>War room</option>
@@ -1936,12 +1970,13 @@
   }
 
   function saveSettings() {
-    ['popups', 'sound', 'vibrate', 'hospAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'medAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
+    ['popups', 'sound', 'vibrate', 'hospAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
     cfg.chainMin = Math.max(1, parseInt($('wsp-c-chainMin').value, 10) || 10);
     cfg.flight = $('wsp-c-flight').value;
     cfg.theme = $('wsp-c-theme').value;
     cfg.med = $('wsp-c-med').value;
     cfg.blood = $('wsp-c-blood').value;
+    cfg.medCap = $('wsp-c-medCap').value;
     applyTheme();
     cfg.callsUrl = $('wsp-c-callsUrl').value.trim();
     cfg.callsPw = $('wsp-c-callsPw').value.trim();
