@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.49
+// @version      5.50
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.49';
+  const WSP_VERSION = '5.50';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1929,7 +1929,7 @@
       const eCls = en.current === en.maximum || (en.fulltime > 0 && eLeft <= 0 && en.current <= en.maximum) ? 'efull' : eLeft > 0 && eLeft <= (+cfg.energyWarn || 0) * 60 ? 'enear' : '';
       // countdown under the number from an hour out (Settings), counting to full
       const cdFrom = Math.max(0, +cfg.energyCd || 0) * 60;
-      const eSub = eLeft > 0 && eLeft <= cdFrom && en.current < en.maximum ? 'full ' + fmt(eLeft)
+      const eSub = eLeft > 0 && eLeft <= cdFrom && en.current < en.maximum ? fmt(eLeft)
         : eCls === 'efull' ? 'FULL' : '';
       b.push(bi('⚡', `${en.current}<span class="mx">/${en.maximum}</span>`, eCls, eSub));
     }
