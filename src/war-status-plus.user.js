@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.40
+// @version      5.41
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.40';
+  const WSP_VERSION = '5.41';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -641,6 +641,12 @@
     }
     save('wsp_rev', S.rev);
     S.dirty = true;
+  }
+  // our members: hide Revive when their revives are set to "No one" (unknown setting: keep the button)
+  function canRevive(id) {
+    const r = S.rev && S.rev[id];
+    if (!r || Date.now() - r.at > 30 * 60e3 || !r.set) return true;
+    return !/no ?one/i.test(r.set);
   }
   function revTag(id, kind) {
     const r = S.rev && S.rev[id];
@@ -1973,7 +1979,7 @@
       ? `<small class="wsp-retal" data-until="${S.retals[id].until}" title="Hit ${esc(S.retals[id].victim)}">🔁${fmt(retalLeft(id))}</small>` : '';
     const action = kind === 'enemy'
       ? `<button class="wsp-atk" data-act="attack" data-id="${id}">Attack</button>`
-      : st.state === 'Hospital' && hospLeft(st) > 0
+      : st.state === 'Hospital' && hospLeft(st) > 0 && canRevive(id)
         ? `<button class="wsp-atk rev" data-act="profile" data-id="${id}">Revive</button>`
         : '<span></span>';
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
