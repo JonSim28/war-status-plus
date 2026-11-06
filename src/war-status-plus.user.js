@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.39
+// @version      5.40
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.39';
+  const WSP_VERSION = '5.40';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2342,7 +2342,8 @@
         if (typeof PDA_httpGet === 'function') v = String((await PDA_httpGet(base + 'version.txt?' + bust)).responseText || '').trim();
       }
       if (!/^\d+(\.\d+)*$/.test(v)) throw new Error('no version file');
-      const newer = v.split('.').map(Number).reduce((acc, n, i) => acc !== 0 ? acc : n - (+(WSP_VERSION.split('.')[i] || 0)), 0) > 0;
+      const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; };
+      const newer = cmp(v, WSP_VERSION) > 0;
       if (!newer) { if (manual) toast(`\u2705 You're on the latest version (v${WSP_VERSION})`); return; }
       if (updReady === v) { if (manual) location.reload(); return; }
       let code = '';
@@ -2352,11 +2353,14 @@
       } catch (e) {
         if (typeof PDA_httpGet === 'function') code = String((await PDA_httpGet(FROM_LOADER + '?' + bust)).responseText || '');
       }
-      // GitHub's cache can lag a minute behind version.txt; only accept the copy that really is the new version
-      if (code.length < 20000 || !code.includes('WarStatusPlus') || !code.includes(`WSP_VERSION="${v}"`) && !code.includes(`@version      ${v}`)) {
+      // GitHub's cache can lag behind version.txt (especially after quick back-to-back updates):
+      // take whatever copy is newer than the one running, even if it isn't the very latest yet
+      const cv = ((code.match(/@version\s+([\d.]+)/) || [])[1]) || '';
+      if (code.length < 20000 || !code.includes('WarStatusPlus') || !cv || cmp(cv, WSP_VERSION) <= 0) {
         if (manual) toast('\u23f3 New version is on its way, try again in a minute');
         return;
       }
+      v = cv;
       try { localStorage.setItem('wsp_code', code); localStorage.setItem('wsp_code_chk', String(Date.now())); } catch (e) { return; }
       updReady = v;
       if (manual) { location.reload(); return; }
