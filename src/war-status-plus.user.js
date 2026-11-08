@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.57
+// @version      5.58
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.57';
+  const WSP_VERSION = '5.58';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1077,6 +1077,8 @@
     background:linear-gradient(135deg,var(--head2),var(--head));font-size:22px;
     z-index:2147483000;box-shadow:2px 2px 10px var(--shadow);-webkit-tap-highlight-color:transparent;user-select:none;}
   #wsp-btn.hide{display:none;}
+  #wsp-btn{touch-action:none;}
+  #wsp-btn.drag{opacity:.75;transition:none;}
   #wsp-btn.alert{background:var(--hot);animation:wspPulse 1s infinite;}
   @keyframes wspPulse{50%{transform:translateY(-50%) scale(1.12);}}
   #wsp-toasts{position:fixed;left:8px;bottom:calc(25% + 34px);display:flex;flex-direction:column;gap:6px;z-index:2147483002;max-width:80vw;}
@@ -1336,7 +1338,7 @@
     </div>
     <div id="wsp-bonus"></div>
     <div id="wsp-bars"><span id="wsp-barsv"></span>
-      <span class="wsp-quick"><button data-act="armoury" title="Faction armoury – medical">${MEDBOX}</button><button data-act="drug" data-d="xanax" title="Take a Xanax from the armoury"><span class="wsp-pb">${PILL_X}<small>XAN</small></span></button><button data-act="drug" data-d="vicodin" title="Take a Vicodin from the armoury"><span class="wsp-pb">${PILL_V}<small>VIC</small></span></button><button data-act="travel" title="Travel agency">✈️</button></span></div>
+      <span class="wsp-quick"><button data-act="armoury" title="Faction armoury – medical">${MEDBOX}</button><button data-act="drug" data-d="hosp" title="Self-hospital: Ipecac Syrup, or a blood bag that does not match your type">🏥</button><button data-act="drug" data-d="xanax" title="Take a Xanax from the armoury"><span class="wsp-pb">${PILL_X}<small>XAN</small></span></button><button data-act="drug" data-d="vicodin" title="Take a Vicodin from the armoury"><span class="wsp-pb">${PILL_V}<small>VIC</small></span></button><button data-act="travel" title="Travel agency">✈️</button></span></div>
     <div id="wsp-tabs">
       <div data-act="tab" data-tab="enemy">Enemy</div>
       <div data-act="tab" data-tab="mine">Ours</div>
@@ -1349,6 +1351,41 @@
   btn.id = 'wsp-btn';
   btn.type = 'button';
   btn.textContent = '⚔️';
+  // Drag the tab up or down the left edge; where you leave it is remembered. A plain tap still opens the panel.
+  let btnDragEnd = 0;
+  (() => {
+    const clampY = y => Math.max(40, Math.min(window.innerHeight - 40, y));
+    const place = () => { const f = load('wsp_btn_y', 0); if (f > 0 && f < 1) btn.style.top = clampY(f * window.innerHeight) + 'px'; };
+    place();
+    window.addEventListener('resize', place);
+    let startY = null, dragging = false;
+    const begin = y => { startY = y; dragging = false; };
+    const move = (y, e) => {
+      if (startY === null) return;
+      if (!dragging && Math.abs(y - startY) < 8) return;
+      dragging = true;
+      btn.classList.add('drag');
+      btn.style.top = clampY(y) + 'px';
+      btnDragEnd = Date.now(); // the page-level tap handler sees this before our touchend, so the drop doesn't open the panel
+      if (e.cancelable) e.preventDefault();
+    };
+    const end = () => {
+      if (dragging) {
+        btnDragEnd = Date.now();
+        save('wsp_btn_y', parseFloat(btn.style.top) / window.innerHeight);
+        btn.classList.remove('drag');
+      }
+      startY = null; dragging = false;
+    };
+    btn.addEventListener('touchstart', e => begin(e.touches[0].clientY), { passive: true });
+    btn.addEventListener('touchmove', e => move(e.touches[0].clientY, e), { passive: false });
+    // window-level capture: the page-level tap handler stops the event before it would reach the tab itself
+    window.addEventListener('touchend', end, true);
+    window.addEventListener('touchcancel', end, true);
+    btn.addEventListener('mousedown', e => { begin(e.clientY); e.preventDefault(); });
+    window.addEventListener('mousemove', e => move(e.clientY, e));
+    window.addEventListener('mouseup', end, true);
+  })();
 
   /* ---------- Faction armoury: highlight your preferred medication ---------- */
   const MED_NAMES = { '': 'None', blood: 'Blood bag', morphine: 'Morphine', fak: 'First Aid Kit', sfak: 'Small First Aid Kit', ipecac: 'Ipecac Syrup', neumune: 'Neumune Tablet' };
@@ -1387,7 +1424,7 @@
   const curWant = () => want || cfg.med;
   const isDrug = w => !!DRUG_NAMES[w];
   const wantSub = () => (isDrug(curWant()) ? 'drugs' : 'medical');
-  const wantName = w => DRUG_NAMES[w] || MED_NAMES[w];
+  const wantName = w => DRUG_NAMES[w] || (w === 'hosp' ? 'Ipecac Syrup' : MED_NAMES[w]);
   const disarm = () => { via.med = false; via.trip = false; };
   // Anything other than our own buttons drops the bars: Torn links (hash or history changes), back/forward,
   // a page restored from cache, switching away for a while, or 3 minutes without using the bar.
@@ -1694,7 +1731,9 @@
     }
     if (!medbar.isConnected) document.body.appendChild(medbar);
     const okTypes = W === 'blood' ? (BLOOD_OK[cfg.blood] || null) : null;
-    let label = `${isDrug(W) ? LEAF : MEDBOX.replace('class="wsp-box"', 'class="wsp-box" style="display:inline;vertical-align:-.25em;width:1.2em;height:1.1em"')} Looking for <span class="k">${wantName(W)}${W === 'blood' && cfg.blood ? ' ' + cfg.blood : ''}</span>`;
+    const okBad = W === 'hosp' ? (BLOOD_OK[cfg.blood] || null) : null; // the safe list; anything else puts you in hospital
+    const hosp = W === 'hosp';
+    let label = `${isDrug(W) ? LEAF : hosp ? '\u{1F3E5}' : MEDBOX.replace('class="wsp-box"', 'class="wsp-box" style="display:inline;vertical-align:-.25em;width:1.2em;height:1.1em"')} ${hosp ? 'Self-hospital:' : 'Looking for'} <span class="k">${wantName(W)}${W === 'blood' && cfg.blood ? ' ' + cfg.blood : ''}</span>`;
     if (isDrug(W) && S.cd) {
       const left = S.cd.drug - (Date.now() - S.uAt) / 1000;
       if (left > 0) label += ` \u00b7 <span style="color:#ff5a5a">drug cooldown ${fmt(left)}</span>`;
@@ -1716,7 +1755,11 @@
       if (panel.contains(li) || li.querySelector('li')) return; // skip our panel and container rows
       const k = medKind((li.textContent || '').slice(0, 300));
       let cls = '';
-      if (k && W === 'blood' && k.kind === 'blood') {
+      if (k && hosp) {
+        // Ipecac first; otherwise a blood bag your type can't take (only once your blood type is set)
+        if (k.kind === 'ipecac') cls = 'pref';
+        else if (k.kind === 'blood' && okBad && !okBad.includes(k.type)) cls = 'ok';
+      } else if (k && W === 'blood' && k.kind === 'blood') {
         if (k.type === cfg.blood) cls = 'pref';
         else if (!okTypes || okTypes.includes(k.type)) cls = 'ok'; // no blood type set: show every bag
       } else if (k && k.kind === W) cls = 'pref';
@@ -1725,12 +1768,16 @@
       if (cls) {
         count++;
         // your own type first; otherwise the closest safe type, keeping O- (everyone's backup) for last
-        const rank = cls === 'pref' ? -1 : (okTypes ? okTypes.indexOf(k.type) : 50);
+        const rank = cls === 'pref' ? -1 : hosp ? 0 : (okTypes ? okTypes.indexOf(k.type) : 50);
         if (rank < firstRank) { first = li; firstRank = rank; firstType = k.type || ''; }
       }
     });
     if (W === 'blood' && cfg.blood && first && firstRank >= 0) label += ` \u00b7 none of yours, using <span class="o">${firstType}</span>`;
-    if (!count && W === 'blood' && cfg.blood && [...items].some(li => /blood bag/i.test(li.textContent || ''))) label += ' · <span style="color:#ff5a5a">no safe bag here</span>';
+    if (hosp) {
+      if (first && firstRank >= 0) label += ` \u00b7 no Ipecac, using <span class="o">blood bag ${firstType}</span> (wrong type)`;
+      else if (!first && !okBad) label += ' \u00b7 <span style="color:#ff5a5a">no Ipecac - set your blood type in \u2699\ufe0f Settings to use a wrong blood bag</span>';
+      else if (!first && items.length > 5) label += ' \u00b7 <span style="color:#ff5a5a">no Ipecac or wrong-type blood bag here</span>';
+    } else if (!count && W === 'blood' && cfg.blood && [...items].some(li => /blood bag/i.test(li.textContent || ''))) label += ' · <span style="color:#ff5a5a">no safe bag here</span>';
     else if (!count && items.length > 5) label += ' · <span style="opacity:.7">none found</span>';
     medTarget = first;
     if (medLbl.innerHTML !== label) medLbl.innerHTML = label;
@@ -1789,7 +1836,7 @@
       const t = el.closest('.wsp-toast');
       if (t) t.remove();
     },
-    '#wsp-btn': () => toggle(true),
+    '#wsp-btn': () => { if (Date.now() - btnDragEnd > 700) toggle(true); },
     '#wsp-dock': () => toggle(false),
     '#wsp-ref': () => { refresh(); if (cfg.callsUrl) loadCalls(); },
     '.wsp-toast': el => {
