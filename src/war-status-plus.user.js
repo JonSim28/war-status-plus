@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.52
+// @version      5.53
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.52';
+  const WSP_VERSION = '5.53';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -571,7 +571,8 @@
           if (eid) { S.war = w; break; }
         }
       }
-      if (!eid) eid = localStorage.getItem('wsp_enemy');
+      S.watching = false;
+      if (!eid) { eid = localStorage.getItem('wsp_enemy'); S.watching = !!eid; } // a faction you chose to watch
       if (eid) {
         const prev = S.enemy && String(S.enemy.ID) === String(eid) ? S.enemy.members : null;
         const enemy = await api(`faction/${eid}`, 'basic');
@@ -1075,6 +1076,7 @@
   @keyframes wspPulse{50%{transform:translateY(-50%) scale(1.12);}}
   #wsp-toasts{position:fixed;left:8px;bottom:calc(25% + 34px);display:flex;flex-direction:column;gap:6px;z-index:2147483002;max-width:80vw;}
   #wsp-toasts.top{bottom:auto;top:12px;left:50%;transform:translateX(-50%);}
+  .wsp-watch{color:#9fd3ff;cursor:pointer;font-weight:700;}
   .wsp-tatk{display:inline-block;margin-left:10px;padding:5px 10px;border-radius:4px;background:#c62828;color:#fff;font-weight:800;letter-spacing:.8px;font-size:12px;vertical-align:middle;cursor:pointer;}
   .wsp-toast{background:var(--head);color:var(--headText);padding:9px 12px;border-radius:10px;font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     box-shadow:0 4px 14px var(--shadow);cursor:pointer;border-left:4px solid var(--accent);}
@@ -1887,6 +1889,19 @@
       case 'load': {
         const v = ($('wsp-eid').value || '').trim();
         if (/^\d+$/.test(v)) { localStorage.setItem('wsp_enemy', v); refresh(); }
+        else if (!v) { localStorage.removeItem('wsp_enemy'); S.enemy = null; refresh(); }
+        break;
+      }
+      case 'unwatch':
+        localStorage.removeItem('wsp_enemy');
+        S.enemy = null; S.watching = false; lastSig = '';
+        toast('\u2705 Stopped watching that faction');
+        refresh();
+        break;
+      case 'watchset': {
+        const v = (($('wsp-c-watch') || {}).value || '').trim();
+        if (/^\d+$/.test(v)) { localStorage.setItem('wsp_enemy', v); toast('\u{1F441}\ufe0f Watching faction ' + v + ' when there is no ranked war'); refresh(); }
+        else if (!v) { localStorage.removeItem('wsp_enemy'); S.enemy = null; toast('\u2705 Stopped watching'); refresh(); }
         break;
       }
       default: {
@@ -1971,6 +1986,7 @@
         parts.push(`counting hits ${pct}%`);
       }
     }
+    if (S.watching && S.enemy) parts.unshift(`<span class="wsp-watch" data-act="unwatch" title="Stop watching this faction">\u{1F441}\ufe0f watching \u2715</span>`);
     parts.push(S.loading ? 'updating…' : S.at ? Math.round((Date.now() - S.at) / 1000) + 's ago' : '');
     if (S.err) parts.push(esc('⚠️ ' + S.err));
     else if (S.callsErr) parts.push(esc('⚠️ ' + S.callsErr));
@@ -2191,6 +2207,10 @@
         return `<div class="wsp-help">Respect counted on us: ${Math.round(onUs).toLocaleString()} (named ${Math.round(onUs - (ws.stealthR || 0)).toLocaleString()} + stealthed ${Math.round(ws.stealthR || 0).toLocaleString()} from ${ws.stealth || 0} hits)${theirScore != null ? ` vs their war score ${Number(theirScore).toLocaleString()}` : ''}.</div>
         <div class="wsp-help">War hit counts: read ${ws.read || 0} attacks (${ws.cnt ? ws.cnt.o : 0} our wins, ${ws.cnt ? ws.cnt.i : 0} wins on us) from ${src}, back to ${back}${S.retalErr ? ' \u00b7 ' + esc(S.retalErr) : ''}.<br>Results seen: ${res || 'none yet'}</div>`;
       })()}
+      <div class="wsp-grp">Watched faction</div>
+      <label class="wsp-set">Faction ID to watch outside ranked wars <input id="wsp-c-watch" inputmode="numeric" value="${esc(localStorage.getItem('wsp_enemy') || '')}" style="width:110px"></label>
+      <div class="wsp-actions"><button data-act="watchset">Watch</button><button data-act="unwatch">Stop watching</button></div>
+      <div class="wsp-help">Only used when you're not in a ranked war; a ranked war always takes over. Clear it to stop.</div>
       <div class="wsp-grp">Display</div>
       <label class="wsp-set">Default flight type <select id="wsp-c-flight">${opts}</select></label>
       <div class="wsp-help">Only used when nothing better is known. Each enemy's own method comes first: timed from a real flight, a business class job perk, or an airstrip on their Private Island.</div>
