@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.53
+// @version      5.54
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.53';
+  const WSP_VERSION = '5.54';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2522,7 +2522,8 @@
     } else if (act === 'ccopy') {
       const a = S.mine.members[callSel.mine], b = S.enemy.members[callSel.enemy];
       if (!a || !b) return;
-      const text = `${a.name} -> ${b.name} https://www.torn.com/loader.php?sid=attack&user2ID=${callSel.enemy}`;
+      // attack link for TornPDA / browsers, plus a profile link: Torn's own app can't open attack links from chat
+      const text = `${a.name} -> ${b.name} https://www.torn.com/loader.php?sid=attack&user2ID=${callSel.enemy} (Torn app: https://www.torn.com/profiles.php?XID=${callSel.enemy})`;
       copyText(text, ok => toast(ok ? 'Call copied. Paste it in faction chat: ' + a.name + ' -> ' + b.name : 'Could not copy automatically: ' + text, !ok));
       callSel.mine = callSel.enemy = null;
     }
