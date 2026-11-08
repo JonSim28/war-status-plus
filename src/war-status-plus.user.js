@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.58
+// @version      5.59
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.58';
+  const WSP_VERSION = '5.59';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1338,7 +1338,7 @@
     </div>
     <div id="wsp-bonus"></div>
     <div id="wsp-bars"><span id="wsp-barsv"></span>
-      <span class="wsp-quick"><button data-act="armoury" title="Faction armoury – medical">${MEDBOX}</button><button data-act="drug" data-d="hosp" title="Self-hospital: Ipecac Syrup, or a blood bag that does not match your type">🏥</button><button data-act="drug" data-d="xanax" title="Take a Xanax from the armoury"><span class="wsp-pb">${PILL_X}<small>XAN</small></span></button><button data-act="drug" data-d="vicodin" title="Take a Vicodin from the armoury"><span class="wsp-pb">${PILL_V}<small>VIC</small></span></button><button data-act="travel" title="Travel agency">✈️</button></span></div>
+      <span class="wsp-quick"><button data-act="armoury" title="Faction armoury – medical">${MEDBOX}</button><button data-act="drug" data-d="xanax" title="Take a Xanax from the armoury"><span class="wsp-pb">${PILL_X}<small>XAN</small></span></button><button data-act="drug" data-d="vicodin" title="Take a Vicodin from the armoury"><span class="wsp-pb">${PILL_V}<small>VIC</small></span></button><button data-act="travel" title="Travel agency">✈️</button><button data-act="drug" data-d="hosp" title="Self-hospital: Ipecac Syrup, or a blood bag that does not match your type">🏥</button></span></div>
     <div id="wsp-tabs">
       <div data-act="tab" data-tab="enemy">Enemy</div>
       <div data-act="tab" data-tab="mine">Ours</div>
