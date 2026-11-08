@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.56
+// @version      5.57
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.56';
+  const WSP_VERSION = '5.57';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -72,6 +72,11 @@
   if (!localStorage.getItem('wsp_en_v2')) { delete savedCfg.energyAlert; try { localStorage.setItem('wsp_en_v2', '1'); } catch (e) { /* ignore */ } }
   const cfg = Object.assign({}, DEFAULTS, savedCfg);
   if (typeof __wspPreset === 'object' && __wspPreset) for (const k in FACTION) if (__wspPreset[k] && !FACTION[k]) FACTION[k] = String(__wspPreset[k]);
+  // Faction settings published next to the script (faction.json), for members who installed the plain loader by URL
+  try {
+    const fj = JSON.parse(localStorage.getItem('wsp_facjson') || 'null');
+    if (fj && fj.v) for (const k in FACTION) if (fj.v[k] && !FACTION[k]) FACTION[k] = String(fj.v[k]);
+  } catch (e) { /* ignore */ }
   for (const k in FACTION) if (FACTION[k] && !savedCfg[k]) cfg[k] = FACTION[k]; // faction presets fill any blanks
 
   /* ================= Network ================= */
@@ -2580,6 +2585,17 @@
       if (manual) toast('Could not check for updates right now');
     }
   }
+  // refresh faction.json (used from the next page load) every few hours
+  if (FROM_LOADER) setTimeout(async () => {
+    try {
+      const old = JSON.parse(localStorage.getItem('wsp_facjson') || 'null');
+      if (old && Date.now() - old.at < 3 * 3600e3) return;
+      const r = await fetch(FROM_LOADER.replace(/[^/]*$/, '') + 'faction.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = await r.json();
+      if (v && typeof v === 'object') localStorage.setItem('wsp_facjson', JSON.stringify({ at: Date.now(), v }));
+    } catch (e) { /* none published */ }
+  }, 8000);
   if (FROM_LOADER) { setTimeout(checkUpdate, 15000); setInterval(() => { if (!document.hidden) checkUpdate(); }, 120000); }
 
   // Tell people when an auto-update has landed
