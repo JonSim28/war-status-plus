@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.55
+// @version      5.56
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.55';
+  const WSP_VERSION = '5.56';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1780,7 +1780,7 @@
   // Tab / dock / refresh / toast taps are caught at document level so the page can't swallow them
   const ACTIONS = {
     '.wsp-tatk': el => {
-      window.open(`https://www.torn.com/loader.php?sid=attack&user2ID=${el.dataset.id}`, '_blank');
+      window.open(`https://www.torn.com/page.php?sid=attack&user2ID=${el.dataset.id}`, '_blank');
       const t = el.closest('.wsp-toast');
       if (t) t.remove();
     },
@@ -1829,7 +1829,7 @@
     switch (el.dataset.act) {
       case 'attack':
         e.preventDefault();
-        window.open(`https://www.torn.com/loader.php?sid=attack&user2ID=${id}`, '_blank');
+        window.open(`https://www.torn.com/page.php?sid=attack&user2ID=${id}`, '_blank');
         break;
       case 'profile':
         e.preventDefault();
@@ -2522,7 +2522,7 @@
     } else if (act === 'ccopy') {
       const a = S.mine.members[callSel.mine], b = S.enemy.members[callSel.enemy];
       if (!a || !b) return;
-      const text = `${a.name} -> ${b.name} https://www.torn.com/loader.php?sid=attack&user2ID=${callSel.enemy}`;
+      const text = `${a.name} -> ${b.name} https://www.torn.com/page.php?sid=attack&user2ID=${callSel.enemy}`;
       copyText(text, ok => toast(ok ? 'Call copied. Paste it in faction chat: ' + a.name + ' -> ' + b.name : 'Could not copy automatically: ' + text, !ok));
       callSel.mine = callSel.enemy = null;
     }
