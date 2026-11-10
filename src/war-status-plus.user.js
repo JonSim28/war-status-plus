@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.59
+// @version      5.60
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.59';
+  const WSP_VERSION = '5.60';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2875,9 +2875,10 @@
       const watch = war.late ? `Counting since ${since}, after the war started, so earlier drug use isn't included.`
         : `Counting since ${since}.`;
       const cov = d.coverage && d.coverage.oldest ? ` Everyone is re-checked about every 15-20 min; oldest check ${span(now - d.coverage.oldest)} ago.` : '';
+      const bad = d.coverage && d.coverage.failed ? ` <span style="color:#ff5a5a">Torn did not return drug stats for ${d.coverage.failed} member${d.coverage.failed > 1 ? 's' : ''} (${W.esc(d.coverage.why || 'unknown')}), so they are not being counted.</span>` : '';
       html += `<div class="wsp-iwar"><div class="t">${head}</div>
         <div class="s">Starts ${day(war.start)} ${clock(war.start)} TCT${war.end ? ' &middot; ended ' + day(war.end) + ' ' + clock(war.end) : ''}</div>
-        <div class="n">${watch}${cov}</div></div>`;
+        <div class="n">${watch}${cov}${bad}</div></div>`;
 
       if (view === 'war' && war.phase === 'pre') {
         return html + '<div class="wsp-msg">The war has not started yet. War numbers begin at the start time.</div>';
