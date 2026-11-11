@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.60
+// @version      5.61
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.60';
+  const WSP_VERSION = '5.61';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -475,7 +475,8 @@
   function liveFF(id, side) {
     const f = ffCache[id];
     if (!f || f.ff == null) return null;
-    const d = DRUG_FX[((side === 'mine' ? S.influenceMine : S.influence)[id] || {}).t];
+    const inf = (side === 'mine' ? S.influenceMine : S.influence)[id] || {};
+    const d = DRUG_FX[inf.fx != null ? inf.fx : inf.t];
     if (!d) return { ff: f.ff, bs: f.bs, d: null };
     const n = (f.n != null ? f.n : parseHuman(f.bs));
     // Fair fight is 1 + 8/3 x (their stats / yours), capped at 3, so it scales the same way
@@ -492,7 +493,7 @@
   function liveCell(id) {
     const l = cfg.ff ? liveFF(id) : null;
     if (!l) return '<span class="wsp-ff none">&ndash;</span>';
-    if (!l.d) return `<span class="wsp-ff same" title="No drug effect seen right now, so the same as FF">${esc(l.bs || '?')}</span>`;
+    if (!l.d) return `<span class="wsp-ff same" title="No Xanax or Vicodin effect seen right now (an overdose doesn't change battle stats), so the same as FF">${esc(l.bs || '?')}</span>`;
     const [bg, fg] = ffColors(l.ff);
     return `<span class="wsp-ff live ${l.d.cls}" style="background:${bg};color:${fg}" title="On ${l.d.name}: battle stats x${l.d.f}, fair fight about ${l.ff.toFixed(2)}">${esc(l.bs)}</span>`;
   }
@@ -2503,7 +2504,8 @@
     if (!f) return null;
     const n = f.n != null ? f.n : parseHuman(f.bs);
     if (n == null) return null;
-    const d = DRUG_FX[((side === 'mine' ? S.influenceMine : S.influence)[id] || {}).t];
+    const inf = (side === 'mine' ? S.influenceMine : S.influence)[id] || {};
+    const d = DRUG_FX[inf.fx != null ? inf.fx : inf.t];
     return { n: n * (d ? d.f : 1), d };
   }
   function callRows(side) {
@@ -2814,6 +2816,9 @@
       const pool = active.some(e => e.t === 'o') ? active.filter(e => e.t === 'o') : active;
       const best = pool.reduce((a, b) => (b.end > a.end ? b : a));
       best.left = best.end - now;
+      // the battle stat effect still running underneath (an overdose itself doesn't change battle stats)
+      const fx = active.filter(e => e.t !== 'o');
+      best.fx = fx.length ? fx.reduce((a, b) => (b.end > a.end ? b : a)).t : '';
       best.text = `Took ${LONG[best.t]} between ${clock(best.from)} and ${clock(best.to)} TCT. ` +
         `Estimated clear around ${clock(best.end)} TCT` + (best.t === 'o' ? '.' : ' (cooldowns vary by about an hour either way).');
       return best;
@@ -2827,7 +2832,7 @@
       const now = Date.now() / 1000, map = {};
       for (const id in d.members) {
         const inf = influence(d.members[id], now);
-        if (inf) map[id] = { t: inf.t };
+        if (inf) map[id] = { t: inf.t, fx: inf.fx };
       }
       W.setInfluence(map, which === 'own' ? 'mine' : 'enemy');
     }
