@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.61
+// @version      5.62
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.61';
+  const WSP_VERSION = '5.62';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2777,6 +2777,57 @@
     }
     function loadAll(force) {
       ['enemy', 'own'].forEach(w => { if (force || Date.now() - src[w].at > 60000) loadIntel(w); });
+      if (force || Date.now() - arm.at > 60000) loadArmoury();
+    }
+
+    // Torn's API only gives other players' drug totals as a daily snapshot, so for our own faction
+    // the live timers come from the armoury log: "X used one of the faction's Xanax items".
+    const arm = { at: 0, busy: false, err: '', last: W.load('wsp_armlog', {}) }; // last[id] = { x: ts, v: ts }
+    async function loadArmoury() {
+      const S = W.state, key = W.getKey();
+      if (arm.busy || !key || !(S.mine && S.mine.ID)) return;
+      arm.busy = true; arm.at = Date.now();
+      try {
+        let items = [];
+        const j = await W.getJSON(`https://api.torn.com/v2/faction/news?cat=armoryAction&striptags=false&limit=100&sort=DESC&key=${key}&comment=WarStatusPlus`);
+        if (j && Array.isArray(j.news)) items = j.news.map(n => ({ t: n.text || '', ts: n.timestamp }));
+        else {
+          const j1 = await W.getJSON(`https://api.torn.com/faction/?selections=armorynews&key=${key}&comment=WarStatusPlus`);
+          if (j1 && j1.error) throw new Error(j1.error.error);
+          items = Object.values((j1 && j1.armorynews) || {}).map(n => ({ t: n.news || '', ts: n.timestamp }));
+        }
+        let changed = false;
+        for (const n of items) {
+          const m = /XID=(\d+)[\s\S]*?used (?:one of|\d+ of)? ?(?:the )?faction's (Xanax|Vicodin)/i.exec(n.t);
+          if (!m || !n.ts) continue;
+          const k = /xanax/i.test(m[2]) ? 'x' : 'v';
+          const r = arm.last[m[1]] || (arm.last[m[1]] = {});
+          if (!r[k] || n.ts > r[k]) { r[k] = n.ts; changed = true; }
+        }
+        // forget anything older than two days
+        const old = Date.now() / 1000 - 2 * 86400;
+        for (const id in arm.last) { for (const k in arm.last[id]) if (arm.last[id][k] < old) delete arm.last[id][k]; if (!Object.keys(arm.last[id]).length) delete arm.last[id]; }
+        W.save('wsp_armlog', arm.last);
+        arm.err = '';
+        if (changed) { pushInfluence('own'); W.redraw(); }
+      } catch (e) {
+        arm.err = String(e && e.message || e);
+      }
+      arm.busy = false;
+    }
+    // An armoury Xanax/Vicodin newer than the tracker's last one replaces it (the armoury log is exact to the second)
+    // Only live sources count for timers: the tracker's Xanax/Vicodin times come from Torn's daily totals
+    // (a whole day's use appears at midnight), and so can its overdose time unless it was seen in hospital.
+    function live(r) {
+      const o = Object.assign({}, r, { lx: null, lv: null });
+      if (o.lo && o.lo[1] !== o.odSeen) o.lo = null;
+      return o;
+    }
+    function withArm(id, r) {
+      const o = live(r), a = arm.last[id];
+      if (a && a.x) o.lx = [a.x, a.x];
+      if (a && a.v) o.lv = [a.v, a.v];
+      return o;
     }
 
     let lastDraw = 0;
@@ -2809,7 +2860,7 @@
       if (r.lv) c.push({ t: 'v', from: r.lv[0], to: r.lv[1] });
       if (r.lo) c.push({ t: 'o', from: r.lo[0], to: r.lo[1] });
       if (r.odNow && r.odSeen) c.push({ t: 'o', from: r.odSeen - 60, to: r.odSeen });
-      c.forEach(e => { e.end = (e.from + e.to) / 2 + COOL[e.t]; });
+      c.forEach(e => { e.end = (e.from + e.to) / 2 + COOL[e.t]; e.exact = e.from === e.to; });
       const active = c.filter(e => e.end > now);
       if (!active.length) return null;
       // An active overdose matters most; otherwise show whichever effect lasts longest
@@ -2819,7 +2870,7 @@
       // the battle stat effect still running underneath (an overdose itself doesn't change battle stats)
       const fx = active.filter(e => e.t !== 'o');
       best.fx = fx.length ? fx.reduce((a, b) => (b.end > a.end ? b : a)).t : '';
-      best.text = `Took ${LONG[best.t]} between ${clock(best.from)} and ${clock(best.to)} TCT. ` +
+      best.text = (best.exact ? `Took ${LONG[best.t]} from the faction armoury at ${clock(best.from)} TCT. ` : `Took ${LONG[best.t]} between ${clock(best.from)} and ${clock(best.to)} TCT. `) +
         `Estimated clear around ${clock(best.end)} TCT` + (best.t === 'o' ? '.' : ' (cooldowns vary by about an hour either way).');
       return best;
     }
@@ -2828,10 +2879,14 @@
     // Share who is on what with the main panel, for its Live FF column
     function pushInfluence(which) {
       const d = src[which].data;
-      if (!W.setInfluence || !d || !d.members) return;
+      if (!W.setInfluence) return;
+      const mem = (d && d.members) || {};
+      const own = which === 'own';
       const now = Date.now() / 1000, map = {};
-      for (const id in d.members) {
-        const inf = influence(d.members[id], now);
+      const ids = new Set(Object.keys(mem).concat(own ? Object.keys(arm.last) : []));
+      for (const id of ids) {
+        const r = mem[id] || {};
+        const inf = influence(own ? withArm(id, r) : live(r), now);
         if (inf) map[id] = { t: inf.t, fx: inf.fx };
       }
       W.setInfluence(map, which === 'own' ? 'mine' : 'enemy');
@@ -2879,7 +2934,7 @@
       const since = `${day(war.seenAt)} ${clock(war.seenAt)} TCT`;
       const watch = war.late ? `Counting since ${since}, after the war started, so earlier drug use isn't included.`
         : `Counting since ${since}.`;
-      const cov = d.coverage && d.coverage.oldest ? ` Everyone is re-checked about every 15-20 min; oldest check ${span(now - d.coverage.oldest)} ago.` : '';
+      const cov = d.coverage && d.coverage.oldest ? ` Everyone is re-checked about every 10 min; oldest check ${span(now - d.coverage.oldest)} ago.` : '';
       const bad = d.coverage && d.coverage.failed ? ` <span style="color:#ff5a5a">Torn did not return drug stats for ${d.coverage.failed} member${d.coverage.failed > 1 ? 's' : ''} (${W.esc(d.coverage.why || 'unknown')}), so they are not being counted.</span>` : '';
       html += `<div class="wsp-iwar"><div class="t">${head}</div>
         <div class="s">Starts ${day(war.start)} ${clock(war.start)} TCT${war.end ? ' &middot; ended ' + day(war.end) + ' ' + clock(war.end) : ''}</div>
@@ -2900,7 +2955,7 @@
           x: src ? src.x : null,
           v: src ? (view === 'pre' ? src.v6 : src.v) : null,
           o: src ? src.o : null,
-          inf: influence(r, now)
+          inf: influence(side === 'own' ? withArm(id, r) : live(r), now)
         };
       });
 
@@ -2938,8 +2993,11 @@
       html += '<div class="wsp-help" style="padding-top:8px">' + (view === 'pre'
         ? 'Pre-war: Xanax and overdoses since the war was announced, Vicodin in the last hours before it starts.'
         : 'War: everything since the war started.') +
-        ' Counts are checked against drug cooldowns: anything Torn reports that could not have happened in the time is left out and shown as +N? next to the name.' +
-        ' Under influence counts down to when their drug cooldown should end, using Torn\'s average cooldowns (Xanax 7h, Vicodin 5h, overdose about 24h) and the 15-20 min check window. Tap and hold for the details.</div>';
+        ' Xan, Vic and OD counts come from Torn\'s drug totals, which Torn only updates once a day (around midnight TCT), so today\'s use shows tomorrow. OD tags in hospital are live.' +
+        (side === 'own'
+          ? ' Under influence is live for Xanax and Vicodin taken from the faction armoury' + (arm.err ? ` <span style="color:#ff5a5a">(armoury log unavailable: ${W.esc(arm.err)} - your key needs faction access)</span>` : '') + ', and counts down using Torn\'s average cooldowns (Xanax 7h, Vicodin 5h, overdose about 24h).'
+          : ' Torn shows no live drug use for other factions, so their Under influence only covers overdoses seen in hospital.') +
+        ' Tap and hold for the details.</div>';
       return html;
     }
 
