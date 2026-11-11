@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v2.6 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v2.7 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -159,6 +159,10 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
     }
     W.v = 26;
   }
+  if (W.v === 26) { // v2.7: also count overdoses seen as hospital stays since counting began
+    for (const id in W.m) { const rec = W.m[id]; if (rec.odSeen && rec.odSeen >= W.cntSince) statusOD(W, rec, rec.odSeen); }
+    W.v = 27;
+  }
   if (!W.cntSince) W.cntSince = now; // plausibility-checked counting starts here
 
   const marks = [war.start - VICODIN_WINDOW_HOURS * 3600, war.start];
@@ -171,7 +175,10 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
     const text = (st.description || '') + ' ' + (st.details || '');
     const rec = W.m[id] || (W.m[id] = {});
     if (st.state === 'Hospital' && /overdos/i.test(text)) {
-      if (!rec.odNow) rec.odSeen = now; // a new overdose stay (a changed hospital time is the same stay)
+      if (!rec.odNow) { // a new overdose stay (a changed hospital time is the same stay)
+        rec.odSeen = now;
+        if (now >= W.cntSince) statusOD(W, rec, now);
+      }
       rec.odUntil = st.until;
       rec.odNow = 1;
     } else {
@@ -262,6 +269,15 @@ function credit(W, rec, from, to, dx, dv, dO, replay) {
   }
 }
 
+// Torn's lifetime overdose figure doesn't always go up, so a hospital stay for an overdose counts too.
+// The report shows the higher of the two counts, so one overdose is never counted twice.
+function statusOD(W, rec, t) {
+  const c = rec.cs || (rec.cs = { po: 0, wo: 0 });
+  if (t < W.start) c.po++;
+  else if (!W.end || t < W.end) c.wo++;
+  rec.lo2 = [t - 60, t];
+}
+
 function intelReport() {
   const W = getBig('intel');
   const at = Number(PropertiesService.getScriptProperties().getProperty('at') || 0);
@@ -274,12 +290,14 @@ function intelReport() {
     if (!r.b || !r.l) { members[id] = { odNow: r.odNow || 0 }; continue; }
     oldest = Math.min(oldest, r.l[3]); newest = Math.max(newest, r.l[3]);
     const c = r.cnt || { px: 0, pv6: 0, po: 0, wx: 0, wv: 0, wo: 0 };
+    const cs = r.cs || { po: 0, wo: 0 };
+    const lo = !r.lo2 ? r.lo || null : !r.lo || r.lo2[1] > r.lo[1] ? r.lo2 : r.lo;
     const v6from = W.start - VICODIN_WINDOW_HOURS * 3600;
     const out = {
-      pre: { x: c.px, o: c.po, v6: at >= v6from ? c.pv6 : null, v6from: at >= v6from ? v6from : null },
-      war: at >= W.start ? { x: c.wx, v: c.wv, o: c.wo } : null,
+      pre: { x: c.px, o: Math.max(c.po, cs.po), v6: at >= v6from ? c.pv6 : null, v6from: at >= v6from ? v6from : null },
+      war: at >= W.start ? { x: c.wx, v: c.wv, o: Math.max(c.wo, cs.wo) } : null,
       ex: r.ex || 0,
-      lx: r.lx || null, lv: r.lv || null, lo: r.lo || null, odNow: r.odNow || 0, odSeen: r.odSeen || 0, checked: r.l[3]
+      lx: r.lx || null, lv: r.lv || null, lo, odNow: r.odNow || 0, odSeen: r.odSeen || 0, checked: r.l[3]
     };
     members[id] = out;
   }
