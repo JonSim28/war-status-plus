@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v2.7 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v2.8 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -23,9 +23,10 @@
 const TORN_KEY = 'PASTE_YOUR_TORN_API_KEY';   // Public access is enough
 const WATCH = 'enemy';                        // 'enemy' = watch the enemy faction, 'own' = watch your own faction
 const ENEMY_FACTION_ID = '';                  // optional: faction to track when there's no ranked war (enemy mode)
-const CHECKS_PER_MINUTE = 6;                  // normal rolling checks of enemy members
+const CHECKS_PER_MINUTE = 10;                 // normal rolling checks (Google allows ~20,000 requests a day, so ~12 a minute in total)
 const BURST_PER_MINUTE = 30;                  // right after 6h-before, war start and war end
 const VICODIN_WINDOW_HOURS = 6;
+const SOURCE = 'v2cat';                       // where drug totals come from: v2cat (live), v1cat, v2stat, v1stat (daily snapshot)
 /* ------------------------------------------------------------ */
 
 function setup() {
@@ -193,18 +194,17 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
   if (!pick.length) pick = ids.slice().sort((a, b) => lastT(a) - lastT(b)).slice(0, CHECKS_PER_MINUTE);
 
   if (pick.length) {
-    // Torn only returns another player's personal stats when you name the ones you want
-    const reqs = pick.map(id => ({ url: `https://api.torn.com/user/${id}?selections=personalstats&stat=xantaken,victaken,overdosed&key=${TORN_KEY}&comment=WarTracker`, muteHttpExceptions: true }));
+    const reqs = pick.map(id => ({ url: statsUrl(SOURCE, id), muteHttpExceptions: true }));
     const res = UrlFetchApp.fetchAll(reqs);
     res.forEach((r, i) => {
       let j;
       try { j = JSON.parse(r.getContentText()); } catch (e) { return; }
       const rec = W.m[pick[i]];
       if (!j || j.error || !j.personalstats) { rec.err = j && j.error ? String(j.error.error || j.error.code) : 'no reply'; return; }
-      const ps = readStats(j.personalstats);
-      if (ps.xantaken == null) { rec.err = 'no xanax figure in reply'; return; } // never record a missing figure as 0
+      const ps = drugFigures(j.personalstats);
+      if (ps.x == null) { rec.err = 'no xanax figure in reply'; return; } // never record a missing figure as 0
       delete rec.err;
-      const snap = [Number(ps.xantaken) || 0, Number(ps.victaken) || 0, Number(ps.overdosed) || 0, now];
+      const snap = [ps.x, ps.v || 0, ps.o || 0, now];
       if (!rec.b) rec.b = snap;
       if (rec.l) {
         const dx = snap[0] - rec.l[0], dv = snap[1] - rec.l[1], dO = snap[2] - rec.l[2];
@@ -219,18 +219,44 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
   putBig('intel', W);
 }
 
-// The reply is either { xantaken: n, ... } or a list of { name, value }
-function readStats(ps) {
-  if (!Array.isArray(ps)) return ps;
-  const o = {};
-  ps.forEach(x => { if (x && x.name != null) o[x.name] = x.value; });
-  return o;
+// Torn's personal stats can be asked for in several ways; they don't all update at the same speed
+function statsUrl(src, id) {
+  const k = `key=${TORN_KEY}&comment=WarTracker`;
+  return {
+    v2cat: `https://api.torn.com/v2/user/${id}/personalstats?cat=drugs&${k}`,
+    v1cat: `https://api.torn.com/user/${id}?selections=personalstats&cat=drugs&${k}`,
+    v2stat: `https://api.torn.com/v2/user/${id}/personalstats?stat=xantaken,victaken,overdosed&${k}`,
+    v1stat: `https://api.torn.com/user/${id}?selections=personalstats&stat=xantaken,victaken,overdosed&${k}`
+  }[src];
+}
+
+// Find the Xanax, Vicodin and overdose totals wherever they sit in the reply
+function drugFigures(ps) {
+  const names = { x: ['xantaken', 'xanax'], v: ['victaken', 'vicodin'], o: ['overdosed', 'overdoses'] };
+  const out = {};
+  const walk = o => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { o.forEach(e => { if (e && e.name != null && typeof e.value === 'number') see(e.name, e.value); else walk(e); }); return; }
+    for (const k in o) { if (typeof o[k] === 'number') see(k, o[k]); else walk(o[k]); }
+  };
+  const see = (k, v) => { for (const t in names) if (out[t] == null && names[t].includes(String(k).toLowerCase())) out[t] = v; };
+  walk(ps);
+  return out;
 }
 
 // War Status+ asks for data here
 function doGet(e) {
   const P = PropertiesService.getScriptProperties();
   if (e.parameter.intel) return json(intelReport());
+  if (e.parameter.probe) { // e.g. ...exec?probe=1234567 : the same player's totals from every kind of request
+    const id = e.parameter.probe, out = { using: SOURCE };
+    ['v2cat', 'v1cat', 'v2stat', 'v1stat'].forEach(src => {
+      let j;
+      try { j = JSON.parse(UrlFetchApp.fetch(statsUrl(src, id), { muteHttpExceptions: true }).getContentText()); } catch (err) { out[src] = 'no reply'; return; }
+      out[src] = j.error ? 'error: ' + (j.error.error || j.error.code) : drugFigures(j.personalstats);
+    });
+    return json(out);
+  }
   if (e.parameter.raw) { // e.g. ...exec?raw=1234567 to see one player's readings
     const W = getBig('intel');
     const r = W && W.m[e.parameter.raw];
