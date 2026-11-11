@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v2.5 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v2.6 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -26,7 +26,6 @@ const ENEMY_FACTION_ID = '';                  // optional: faction to track when
 const CHECKS_PER_MINUTE = 6;                  // normal rolling checks of enemy members
 const BURST_PER_MINUTE = 30;                  // right after 6h-before, war start and war end
 const VICODIN_WINDOW_HOURS = 6;
-const MIN_GAP = { x: 6 * 3600, v: 4 * 3600 };    // shortest drug cooldowns: nothing else can be taken sooner
 /* ------------------------------------------------------------ */
 
 function setup() {
@@ -148,9 +147,17 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
   }
   W.start = war.start;
   W.end = war.end;
-  if (W.v !== 25) { // v2.5: older versions read nothing (Torn now needs the stat names), so start counting afresh
+  if (!W.v || W.v < 25) { // before v2.5 nothing was read (Torn now needs the stat names), so start counting afresh
     for (const id in W.m) W.m[id] = { odNow: W.m[id].odNow || 0, odUntil: W.m[id].odUntil, odSeen: W.m[id].odSeen };
-    W.cntSince = now; W.v = 25;
+    W.cntSince = now; W.v = 26;
+  }
+  if (W.v === 25) { // v2.5 set aside doses closer together than 6h; Torn's figures are live, so count them all
+    for (const id in W.m) {
+      const rec = W.m[id];
+      delete rec.cnt; delete rec.ex; delete rec.nd; delete rec.lx; delete rec.lv; delete rec.lo;
+      (rec.h || []).forEach(h => { h.length = 5; credit(W, rec, h[0], h[1], h[2], h[3], h[4], true); });
+    }
+    W.v = 26;
   }
   if (!W.cntSince) W.cntSince = now; // plausibility-checked counting starts here
 
@@ -164,7 +171,8 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
     const text = (st.description || '') + ' ' + (st.details || '');
     const rec = W.m[id] || (W.m[id] = {});
     if (st.state === 'Hospital' && /overdos/i.test(text)) {
-      if (rec.odUntil !== st.until) { rec.odUntil = st.until; rec.odSeen = now; }
+      if (!rec.odNow) rec.odSeen = now; // a new overdose stay (a changed hospital time is the same stay)
+      rec.odUntil = st.until;
       rec.odNow = 1;
     } else {
       rec.odNow = 0;
@@ -235,24 +243,14 @@ function doGet(e) {
   return json(out);
 }
 
-// Count a rise in someone's lifetime drug totals, but only as many doses as the cooldowns allow
-// in the time since the last check. Anything more is Torn's stats catching up, not new drug use.
-function credit(W, rec, from, to, dx, dv, dO) {
-  rec.h = (rec.h || []).concat([[from, to, dx, dv, dO]]).slice(-12);
-  if (from < W.cntSince) return; // started before checking began: can't be verified
+// Count a rise in someone's lifetime drug totals (Torn's figures are live, so every rise is real use)
+function credit(W, rec, from, to, dx, dv, dO, replay) {
+  if (!replay) rec.h = (rec.h || []).concat([[from, to, dx, dv, dO]]).slice(-40);
+  if (from < W.cntSince) return; // started before checking began
   const c = rec.cnt || (rec.cnt = { px: 0, pv6: 0, po: 0, wx: 0, wv: 0, wo: 0 });
-  let next = rec.nd || 0; // earliest time another drug could have been taken
-  const take = (n, gap) => {
-    let k = 0;
-    while (k < n) { const t = Math.max(from, next); if (t > to) break; k++; next = t + gap; }
-    return k;
-  };
-  const cx = take(dx, MIN_GAP.x), cv = take(dv, MIN_GAP.v);
-  const co = Math.min(dO, 1 + Math.floor((to - from) / MIN_GAP.x)); // at most one overdose per drug cooldown
-  rec.nd = next;
-  const extra = dx - cx + dv - cv + dO - co;
-  if (extra > 0) rec.ex = (rec.ex || 0) + extra;
-  rec.h[rec.h.length - 1].push(cx, cv, co);
+  const cx = dx, cv = dv, co = dO;
+  const hh = rec.h.find(h => h[0] === from && h[1] === to) || rec.h[rec.h.length - 1];
+  hh.push(cx, cv, co);
   if (cx) rec.lx = [from, to];
   if (cv) rec.lv = [from, to];
   if (co) rec.lo = [from, to];
