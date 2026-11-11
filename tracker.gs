@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v2.8 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v2.9 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -23,7 +23,7 @@
 const TORN_KEY = 'PASTE_YOUR_TORN_API_KEY';   // Public access is enough
 const WATCH = 'enemy';                        // 'enemy' = watch the enemy faction, 'own' = watch your own faction
 const ENEMY_FACTION_ID = '';                  // optional: faction to track when there's no ranked war (enemy mode)
-const CHECKS_PER_MINUTE = 10;                 // normal rolling checks (Google allows ~20,000 requests a day, so ~12 a minute in total)
+const CHECK_EVERY_MINUTES = 10;               // each member's drug totals are re-checked this often (Google allows ~20,000 requests a day)
 const BURST_PER_MINUTE = 30;                  // right after 6h-before, war start and war end
 const VICODIN_WINDOW_HOURS = 6;
 const SOURCE = 'v2cat';                       // where drug totals come from: v2cat (live), v1cat, v2stat, v1stat (daily snapshot)
@@ -191,7 +191,10 @@ function watchWar(war, enemy, now) { // 'enemy' is whichever faction is being wa
   const lastT = id => (W.m[id] && W.m[id].l ? W.m[id].l[3] : 0);
   const urgent = ids.filter(id => marks.some(t => t <= now && lastT(id) < t)).sort((a, b) => lastT(a) - lastT(b));
   let pick = urgent.slice(0, BURST_PER_MINUTE);
-  if (!pick.length) pick = ids.slice().sort((a, b) => lastT(a) - lastT(b)).slice(0, CHECKS_PER_MINUTE);
+  if (!pick.length) { // spread everyone evenly over CHECK_EVERY_MINUTES, never more than 12 a minute
+    const n = Math.min(12, Math.ceil(ids.length / CHECK_EVERY_MINUTES));
+    pick = ids.filter(id => now - lastT(id) >= (CHECK_EVERY_MINUTES - 1) * 60).sort((a, b) => lastT(a) - lastT(b)).slice(0, n);
+  }
 
   if (pick.length) {
     const reqs = pick.map(id => ({ url: statsUrl(SOURCE, id), muteHttpExceptions: true }));
