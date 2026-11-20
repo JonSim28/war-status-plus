@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.67
+// @version      5.68
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.67';
+  const WSP_VERSION = '5.68';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -561,6 +561,14 @@
     return { ff, bs: n != null ? human(n * d.f) : f.bs, d };
   }
   const ffVal = id => (ffCache[id] && ffCache[id].ff != null ? ffCache[id].ff : 99);
+  // Live = FF adjusted for a Xanax/Vicodin taken from our faction armoury that is still running (ours only)
+  function liveCell(id) {
+    const l = cfg.ff ? liveFF(id, 'mine') : null;
+    if (!l) return '<span class="wsp-ff none">&ndash;</span>';
+    if (!l.d) return `<span class="wsp-ff same" title="No Xanax or Vicodin from the faction armoury running now, so the same as FF">${esc(l.bs || '?')}</span>`;
+    const [bg, fg] = ffColors(l.ff);
+    return `<span class="wsp-ff live ${l.d.cls}" style="background:${bg};color:${fg}" title="On ${l.d.name} (from the faction armoury log): battle stats x${l.d.f}, fair fight about ${l.ff.toFixed(2)}">${esc(l.bs)}</span>`;
+  }
   function ffCell(id) {
     const f = ffCache[id];
     if (!cfg.ff || !f || f.ff == null) return '<span class="wsp-ff none">&ndash;</span>';
@@ -1306,7 +1314,13 @@
   .wsp-call{border:none;background:none;padding:0 3px 0 0;font-size:12px;cursor:pointer;}
   .wsp-ff{font-size:10px;font-weight:700;text-align:center;border-radius:3px;padding:2px 0;}
   .wsp-ff.none{color:var(--faint);}
-  .wsp-row.en,.wsp-row.us{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 46px;gap:4px;}
+  .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 46px;gap:4px;}
+  .wsp-row.us{grid-template-columns:6px minmax(0,1fr) 36px 36px 31px 31px 70px 46px;gap:3px;}
+  .wsp-row.us .wsp-ff{white-space:nowrap;overflow:hidden;letter-spacing:-.3px;}
+  .wsp-row.us .wsp-ff.live::after{display:none;}
+  .wsp-row.us .wsp-ff.live.down{box-shadow:inset 0 0 0 2px #ff8a8a;}
+  .wsp-row.us .wsp-ff.live.up{box-shadow:inset 0 0 0 2px #7dffa8;}
+  .wsp-row.us.wsp-colhead span{letter-spacing:0 !important;font-size:10px !important;}
   .wsp-act{font:600 10px/1 var(--num,inherit);letter-spacing:-.2px;text-align:center;color:var(--fg);white-space:nowrap;padding:3px 0;border-radius:3px;background:rgba(255,255,255,.06);}
   .wsp-act.hi{color:#ffb547;background:rgba(255,170,40,.12);}
   .wsp-act.lo{color:var(--muted);}
@@ -1376,7 +1390,8 @@
   #wsp-panel.dark .wsp-chip{font-family:var(--num);border-color:rgba(255,176,0,.35);background:transparent;border-radius:3px;}
   #wsp-panel.dark .wsp-grp[data-key="enemy:-1"]{color:#ff5252;border-left-color:#ff5252;background:linear-gradient(90deg,rgba(255,59,59,.16),transparent 70%);}
   #wsp-panel.dark .wsp-row{background:rgba(12,16,14,.72);grid-template-columns:7px minmax(0,1fr) 98px 56px;}
-  #wsp-panel.dark .wsp-row.en,#wsp-panel.dark .wsp-row.us{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 54px;}
+  #wsp-panel.dark .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 54px;}
+  #wsp-panel.dark .wsp-row.us{grid-template-columns:6px minmax(0,1fr) 36px 36px 31px 31px 70px 54px;}
   #wsp-panel.dark .wsp-colhead span{font-family:var(--cond);font-size:11px;letter-spacing:1px;color:var(--accent);}
   #wsp-panel.dark .wsp-row.called{background:var(--called);} #wsp-panel.dark .wsp-row.mine-call{background:var(--mine);}
   #wsp-panel.dark .wsp-name a{letter-spacing:.2px;}
@@ -2289,11 +2304,11 @@
       ? `<button class="wsp-atk" data-act="attack" data-id="${id}">Attack</button>`
       : st.state === 'Hospital' && hospLeft(st) > 0 && canRevive(id)
         ? `<button class="wsp-atk rev" data-act="profile" data-id="${id}">Revive</button>`
-        : '<span></span>';
+        : `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack one of ours (e.g. to hospitalise them)">Attack</button>`;
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
       <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
-      ${ffCell(id) + dailyCell(id) + warCell(id, kind)}
+      ${ffCell(id) + (kind === 'enemy' ? '' : liveCell(id)) + dailyCell(id) + warCell(id, kind)}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
     </div>`;
@@ -2485,6 +2500,7 @@
       let html = '', last = null;
       if (rows.length) {
         html += '<div class="wsp-row ' + (kind === 'enemy' ? 'en' : 'us') + ' wsp-colhead"><span></span><span>Member</span><span title="FFScouter battle stat estimate">FF</span>' +
+          (kind === 'enemy' ? '' : '<span title="FF adjusted for a Xanax (-35%) or Vicodin (+25%) from the faction armoury that is still running">Live</span>') +
           '<span title="Average time online per day over the last 30 days (* = account under a month old, all-time average)">Daily</span><span title="Time online since this war started (counted every minute by the trackers)">War</span><span>Status</span><span></span></div>';
       }
       if (nextOut.length) {
