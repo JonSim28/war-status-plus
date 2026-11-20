@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v3.0 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.1 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -9,8 +9,8 @@
  *      - during the war: Xanax, Vicodin and overdoses since it started
  *      - when each enemy last took a Xanax
  *
- * 3. Activity (enemy mode): which TCT hours each enemy is online, with a separate count for
- *    ranked-war time, so War Status+ can show when they're most active.
+ * 3. War activity (enemy mode): from the moment a ranked war starts, counts the minutes each
+ *    enemy shows Online (and Idle), so War Status+ can show how active they've been this war.
  *
  * Two trackers: run one with WATCH = 'enemy' (also records flight times) and, on a second free
  * Google account, one with WATCH = 'own' to watch your own faction's drug use.
@@ -140,55 +140,28 @@ function isFlying(st) {
   return /from\s+torn\s+to|travel+ing\s+to|returning\s+to\s+torn/i.test(st.description || '');
 }
 
-/* ------------------------- activity ------------------------- */
-// Per member: a[h] = minutes seen online in TCT hour h (all the time), w[h] = the same during ranked wars.
-// Old minutes fade each day (a by 10%, w by 3%) so the picture follows their current habits.
+/* ------------------------- war activity ------------------------- */
+// Per war: m[id] = [minutes Online, minutes Idle] since the war started; mins = minutes watched.
+// Starts again with each new war.
 function activity(f, war, now) {
-  const fid = String(f.ID);
+  if (!war || now < war.start || (war.end && now >= war.end)) return;
   let A = getBig('act');
-  if (!A || A.fid !== fid) A = { fid, since: now, day: Math.floor(now / 86400), m: {} };
-  const day = Math.floor(now / 86400);
-  if (day !== A.day) {
-    for (const id in A.m) {
-      A.m[id].a = A.m[id].a.map(v => Math.round(v * 0.9 * 10) / 10);
-      A.m[id].w = A.m[id].w.map(v => Math.round(v * 0.97 * 10) / 10);
-    }
-    A.day = day;
-  }
-  const h = new Date(now * 1000).getUTCHours();
-  const inWar = !!(war && now >= war.start && (!war.end || now < war.end));
-  const next = {};
+  if (!A || A.war !== war.id || A.fid !== String(f.ID)) A = { war: war.id, fid: String(f.ID), start: war.start, mins: 0, m: {} };
+  A.mins++;
   for (const id in (f.members || {})) {
-    const r = A.m[id] || { a: new Array(24).fill(0), w: new Array(24).fill(0) };
-    const la = f.members[id].last_action || {};
-    if (la.status === 'Online') { r.a[h] += 1; if (inWar) r.w[h] += 1; }
-    next[id] = r;
+    const r = A.m[id] || (A.m[id] = [0, 0]);
+    const st = (f.members[id].last_action || {}).status;
+    if (st === 'Online') r[0]++;
+    else if (st === 'Idle') r[1]++;
   }
-  A.m = next; // members who left are dropped
-  if (inWar) A.war = (A.war || 0) + 1; // minutes of war watched
+  A.at = now;
   putBig('act', A);
 }
 
-// Each member's busiest 3-hour stretch (TCT), from war time when there's enough of it
 function activityReport() {
   const A = getBig('act');
-  if (!A) return { error: 'no activity yet' };
-  const out = { fid: A.fid, since: A.since, warMinutes: A.war || 0, m: {} };
-  const best = arr => {
-    let top = -1, s = 0;
-    for (let i = 0; i < 24; i++) { const v = arr[i] + arr[(i + 1) % 24] + arr[(i + 2) % 24]; if (v > top) { top = v; s = i; } }
-    return { s, v: top };
-  };
-  const sum = arr => arr.reduce((x, y) => x + y, 0);
-  for (const id in A.m) {
-    const r = A.m[id], tw = sum(r.w), ta = sum(r.a);
-    const useWar = tw >= 60; // an hour of war-time online to go on
-    const arr = useWar ? r.w : r.a, tot = useWar ? tw : ta;
-    if (tot < 30) { out.m[id] = null; continue; }
-    const b = best(arr);
-    out.m[id] = { s: b.s, p: Math.round(b.v / tot * 100), src: useWar ? 'war' : 'all', on: Math.round(tot), h: arr.map(v => Math.round(v)) };
-  }
-  return out;
+  if (!A) return { error: 'no war watched yet' };
+  return { war: A.war, fid: A.fid, start: A.start, watched: A.mins, at: A.at || 0, m: A.m };
 }
 
 /* ------------------------- war intel ------------------------- */

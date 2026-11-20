@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.64
+// @version      5.65
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.64';
+  const WSP_VERSION = '5.65';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -359,6 +359,7 @@
       S.trackErr = '';
       S.trackDataAt = j.at || 0;
       mergeTracker(j.trips || {});
+      if (S.war && S.war.war && S.war.war.start * 1000 <= Date.now() && Date.now() - (S.warActAt || 0) > 110e3) loadWarAct(u);
       if (j.methods) {
         for (const id in j.methods) methods[id] = { m: j.methods[id][0], ts: j.methods[id][2] };
         save('wsp_methods', methods);
@@ -408,6 +409,24 @@
     loadDaily(id).catch(() => { S.daily[id] = { d: null, at: Date.now() - 18 * 3600e3 }; }).then(() => { S.dailyBusy = false; });
   }
   const hmShort = sec => { const m = Math.round(sec / 60); return m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); };
+  // Minutes each enemy has been Online since this war started (counted every minute by the Opp tracker, v3.1+)
+  S.warAct = load('wsp_waract', null);
+  async function loadWarAct(u) {
+    S.warActAt = Date.now();
+    try {
+      const j = await getJSON(u + (u.includes('?') ? '&' : '?') + 'act=1&t=' + Date.now());
+      if (j && j.m) { S.warAct = j; save('wsp_waract', j); S.dirty = true; }
+    } catch (e) { /* older tracker */ }
+  }
+  function warCell(id) {
+    const A = S.warAct, w = S.war && S.war.war;
+    const ok = A && w && S.enemy && String(A.fid) === String(S.enemy.ID) && +A.start === +w.start;
+    if (!w || w.start * 1000 > Date.now()) return '<span class="wsp-act none" title="Counting starts when the war starts">&ndash;</span>';
+    if (!ok) return '<span class="wsp-act none" title="Waiting for the Opp tracker (needs tracker v3.1)">&ndash;</span>';
+    const r = A.m[id] || [0, 0], on = r[0] * 60, idle = r[1] * 60, pct = A.watched ? Math.round(r[0] / A.watched * 100) : 0;
+    const tip = `Online ${hmShort(on)} of the ${hmShort(A.watched * 60)} watched since the war started (${pct}%). Idle another ${hmShort(idle)}.`;
+    return `<span class="wsp-act${pct >= 50 ? ' hi' : pct < 10 ? ' lo' : ''}" title="${tip}">${hmShort(on)}</span>`;
+  }
   function dailyCell(id) {
     const r = S.daily[id];
     if (!r || r.d == null) return `<span class="wsp-act none" title="${r ? 'Torn did not return their time played' : 'Loading time played...'}">&ndash;</span>`;
@@ -1278,8 +1297,8 @@
   .wsp-call{border:none;background:none;padding:0 3px 0 0;font-size:12px;cursor:pointer;}
   .wsp-ff{font-size:10px;font-weight:700;text-align:center;border-radius:3px;padding:2px 0;}
   .wsp-ff.none{color:var(--faint);}
-  .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 40px 40px 92px 46px;gap:5px;}
-  .wsp-act{font:600 10.5px/1 var(--num,inherit);text-align:center;color:var(--fg);white-space:nowrap;padding:3px 0;border-radius:3px;background:rgba(255,255,255,.06);}
+  .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 46px;gap:4px;}
+  .wsp-act{font:600 10px/1 var(--num,inherit);letter-spacing:-.2px;text-align:center;color:var(--fg);white-space:nowrap;padding:3px 0;border-radius:3px;background:rgba(255,255,255,.06);}
   .wsp-act.hi{color:#ffb547;background:rgba(255,170,40,.12);}
   .wsp-act.lo{color:var(--muted);}
   .wsp-act.none{background:none;color:var(--muted);}
@@ -1348,7 +1367,7 @@
   #wsp-panel.dark .wsp-chip{font-family:var(--num);border-color:rgba(255,176,0,.35);background:transparent;border-radius:3px;}
   #wsp-panel.dark .wsp-grp[data-key="enemy:-1"]{color:#ff5252;border-left-color:#ff5252;background:linear-gradient(90deg,rgba(255,59,59,.16),transparent 70%);}
   #wsp-panel.dark .wsp-row{background:rgba(12,16,14,.72);grid-template-columns:7px minmax(0,1fr) 98px 56px;}
-  #wsp-panel.dark .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 40px 40px 90px 54px;}
+  #wsp-panel.dark .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 54px;}
   #wsp-panel.dark .wsp-colhead span{font-family:var(--cond);font-size:11px;letter-spacing:1px;color:var(--accent);}
   #wsp-panel.dark .wsp-row.called{background:var(--called);} #wsp-panel.dark .wsp-row.mine-call{background:var(--mine);}
   #wsp-panel.dark .wsp-name a{letter-spacing:.2px;}
@@ -2265,7 +2284,7 @@
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
       <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
-      ${kind === 'enemy' ? ffCell(id) + dailyCell(id) : ''}
+      ${kind === 'enemy' ? ffCell(id) + dailyCell(id) + warCell(id) : ''}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
     </div>`;
@@ -2457,7 +2476,7 @@
       let html = '', last = null;
       if (kind === 'enemy' && rows.length) {
         html += '<div class="wsp-row en wsp-colhead"><span></span><span>Member</span><span title="FFScouter battle stat estimate">FF</span>' +
-          '<span title="Average time online per day over the last 30 days (* = account under a month old, all-time average)">Daily</span><span>Status</span><span></span></div>';
+          '<span title="Average time online per day over the last 30 days (* = account under a month old, all-time average)">Daily</span><span title="Time online since this war started (counted every minute by the Opp tracker)">War</span><span>Status</span><span></span></div>';
       }
       if (nextOut.length) {
         html += '<div class="wsp-next"><span class="lbl">Next out</span>' + nextOut.map(x =>
