@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.76
+// @version      5.77
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.76';
+  const WSP_VERSION = '5.77';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1205,6 +1205,13 @@
   .wsp-fly.guess{opacity:.75;}
   .wsp-wt{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px;}
   .wsp-wt.en{color:#ff8a8a;} .wsp-wt.us{color:#9fd8ae;} .wsp-wt.us.zero{color:var(--muted);opacity:.8;}
+  #wsp-atkbadge{position:fixed;left:50%;top:86px;transform:translateX(-50%);z-index:2147483000;max-width:94vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    background:rgba(16,20,24,.94);color:#e8e8e8;border:1px solid #ffb000;border-radius:16px;padding:5px 11px;font:600 12px/1.3 -apple-system,Arial,sans-serif;box-shadow:0 3px 12px rgba(0,0,0,.5);cursor:pointer;}
+  #wsp-atkbadge .t{color:#9aa3ad;font-weight:500;}
+  #wsp-atkbadge b{color:#fff;}
+  #wsp-atkbadge .n{color:#ffb000;}
+  #wsp-atkbadge .ff{border-radius:3px;padding:0 4px;font-size:11px;}
+  #wsp-atkbadge .x{color:#9aa3ad;margin-left:4px;}
   .wsp-l1{display:flex;align-items:center;min-width:0;}
   .wsp-l1 > a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto;}
   .wsp-l1 > *:not(a){flex-shrink:0;}
@@ -1549,6 +1556,47 @@
     else if (hiddenAt && Date.now() - hiddenAt > 30000) disarm();
   });
   setInterval(() => { ['med', 'trip'].forEach(k => { if (via[k] && Date.now() - viaAt[k] > 180000) via[k] = false; }); }, 5000);
+
+  /* ================= Attack page: the target's estimated battle stats ================= */
+  // On page.php?sid=attack&user2ID=..., a small badge shows FFScouter's estimate for the target (tap to hide).
+  let atkShown = '', atkHidden = '';
+  function attackTarget() {
+    if (!/page\.php/.test(location.pathname) || !/sid=attack/i.test(location.search)) return '';
+    const m = location.search.match(/user2ID=(\d+)/i);
+    return m ? m[1] : '';
+  }
+  async function attackBadge() {
+    const id = attackTarget();
+    let b = document.getElementById('wsp-atkbadge');
+    if (!id || !cfg.ff || atkHidden === id) { if (b) b.remove(); atkShown = ''; return; }
+    if (!ffCache[id] || Date.now() - ffCache[id].t > FF_TTL) await loadFF([id]);
+    const f = ffCache[id];
+    const m = (S.enemy && S.enemy.members && S.enemy.members[id]) || (S.mine && S.mine.members && S.mine.members[id]);
+    const ours = !!(S.mine && S.mine.members && S.mine.members[id]);
+    let html;
+    if (!f) html = `<span class="t">Est. stats</span> <b>${ffLoading ? '...' : '?'}</b>`;
+    else if (!f.bs) html = '<span class="t">Est. stats</span> <b>unknown</b>';
+    else {
+      const [bg, fg] = ffColors(f.ff || 0);
+      const l = ours ? liveFF(id, 'mine') : null;
+      html = `<span class="t">Est. stats</span> <b>${esc(f.bs)}</b>` +
+        (f.ff ? ` <span class="ff" style="background:${bg};color:${fg}">FF ${(+f.ff).toFixed(2)}</span>` : '') +
+        (l && l.d ? ` <span class="t">live</span> <b>${esc(l.bs)}</b> <span class="t">(${l.d.name})</span>` : '');
+    }
+    const key = id + html;
+    if (b && atkShown === key) return;
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'wsp-atkbadge';
+      b.title = 'FFScouter estimate - tap to hide';
+      b.addEventListener('click', () => { atkHidden = attackTarget(); b.remove(); atkShown = ''; });
+      (document.body || document.documentElement).appendChild(b);
+    }
+    b.innerHTML = (m ? `<span class="n">${esc(m.name)}</span> ` : '') + html + ' <span class="x">\u2715</span>';
+    atkShown = key;
+  }
+  setInterval(() => { attackBadge().catch(() => {}); }, 1500);
+  attackBadge().catch(() => {});
   const medbar = document.createElement('div');
   medbar.id = 'wsp-medbar';
   medbar.innerHTML = '<span id="wsp-medlbl"></span><button id="wsp-medgo" type="button">⚙️ Cog</button>';
