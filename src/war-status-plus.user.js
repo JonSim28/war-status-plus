@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.72
+// @version      5.73
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.72';
+  const WSP_VERSION = '5.73';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2611,14 +2611,28 @@
   function callRows(side) {
     const f = side === 'mine' ? S.mine : S.enemy;
     if (!f) return [];
-    return Object.entries(f.members || {}).map(([id, m]) => {
+    const rows = Object.entries(f.members || {}).map(([id, m]) => {
       const st = callStatus(m.status || {});
       const on = ONLINE_ORDER[(m.last_action && m.last_action.status) || 'Offline'];
       // Ours: online first, then idle, then offline (each by status). Theirs: by status, online first among the available.
       const k = side === 'mine' ? on * 100 + st.r * 10 + (st.left ? st.left / 1e6 : 0)
         : st.r * 10 + (st.r === 0 ? on : 0) + (st.left ? st.left / 1e6 : 0);
       return { id, m, st, on, ls: liveStats(id, side), ff: liveStats(id, 'none'), k };
-    }).sort((a, b) => a.k - b.k || (b.ls ? b.ls.n : 0) - (a.ls ? a.ls.n : 0));
+    });
+    // With one of ours picked: their best targets first - Okay and in the same place as them,
+    // green (easier) before amber before red, strongest first within each (more respect)
+    const pick = side === 'enemy' && callSel.mine && S.mine.members[callSel.mine];
+    if (pick) {
+      const ours = liveStats(callSel.mine, 'mine');
+      const loc = where(pick.status || {}).loc;
+      const RANK = { easy: 0, even: 1, hard: 2 };
+      rows.forEach(x => {
+        const okHere = x.m.status && x.m.status.state === 'Okay' && loc && where(x.m.status).loc === loc;
+        x.tier = okHere ? (ours && x.ls ? RANK[ratioClass(x.ls.n / ours.n)] : 3) : 9;
+      });
+      return rows.sort((a, b) => a.tier - b.tier || (a.tier < 9 ? (b.ls ? b.ls.n : 0) - (a.ls ? a.ls.n : 0) : a.k - b.k || (b.ls ? b.ls.n : 0) - (a.ls ? a.ls.n : 0)));
+    }
+    return rows.sort((a, b) => a.k - b.k || (b.ls ? b.ls.n : 0) - (a.ls ? a.ls.n : 0));
   }
   function ratioClass(r) { return r < 0.75 ? 'easy' : r <= 1.1 ? 'even' : 'hard'; }
   function callColumn(side) {
@@ -2655,7 +2669,7 @@
         <div class="col"><div class="h">${esc(S.mine.name)}</div><div class="wsp-crow us hd"><span></span><span></span><span>FF</span><span>Live</span><span></span></div>${callColumn('mine')}</div>
         <div class="col"><div class="h">${esc(S.enemy.name)}</div><div class="wsp-crow hd"><span></span><span></span><span>FF</span><span></span></div>${callColumn('enemy')}</div>
       </div>
-      <div class="wsp-help" style="padding-top:8px">Numbers are FFScouter battle stat estimates. For ours, Live adjusts FF for a Xanax (-35%) or Vicodin (+25%) taken from the faction armoury that is still running (outlined). Once one of ours is picked, targets turn green (easier), amber (even) or red (harder) for them, and anyone they have already beaten this war gets a green row with a tick (needs faction API access). Copy call puts the call on your clipboard; paste it in faction chat and send.</div>`;
+      <div class="wsp-help" style="padding-top:8px">Numbers are FFScouter battle stat estimates. For ours, Live adjusts FF for a Xanax (-35%) or Vicodin (+25%) taken from the faction armoury that is still running (outlined). Once one of ours is picked, targets turn green (easier), amber (even) or red (harder) for them and are re-ordered: Okay and in the same place first, green to red, strongest first within each colour, and anyone they have already beaten this war gets a green row with a tick (needs faction API access). Copy call puts the call on your clipboard; paste it in faction chat and send.</div>`;
   }
   function copyText(t, done) {
     const fallback = () => {
