@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.70
+// @version      5.71
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.70';
+  const WSP_VERSION = '5.71';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2810,7 +2810,8 @@
   .wsp-isum div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 4px;text-align:center;}
   .wsp-isum b{display:block;font-size:15px;}
   .wsp-isum span{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;}
-  .wsp-irow{display:grid;grid-template-columns:minmax(0,1fr) 34px 40px 30px 76px;gap:4px;align-items:center;padding:4px 10px;border-bottom:1px solid var(--line2);}
+  .wsp-irow .lod{font-size:11px;color:var(--muted);text-align:center;white-space:nowrap;}
+  .wsp-irow{display:grid;grid-template-columns:minmax(0,1fr) 34px 34px 30px 76px;gap:4px;align-items:center;padding:4px 10px;border-bottom:1px solid var(--line2);}
   .wsp-irow a{color:var(--text);font-weight:600;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wsp-irow span{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;border-radius:3px;padding:1px 3px;}
   .wsp-irow span.hot{color:#fff;background:#c62828;}
@@ -2914,6 +2915,17 @@
       const o = Object.assign({}, r, { lx: null, lv: null });
       if (o.lo && o.lo[1] !== o.odSeen) o.lo = null;
       return o;
+    }
+    // When their last overdose was: exact if seen in hospital, otherwise from Torn's daily figures (only an upper bound)
+    function lastOD(r) {
+      const c = [];
+      if (r.odSeen) c.push({ t: r.odSeen, exact: true });
+      if (r.lo) c.push({ t: r.lo[1], exact: r.lo[1] === r.odSeen || r.lo[1] - r.lo[0] <= 60 });
+      if (!c.length) return null;
+      const b = c.reduce((a, x) => (x.t > a.t ? x : a));
+      b.text = b.exact ? `Overdosed at ${day(b.t)} ${clock(b.t)} TCT (seen in hospital).`
+        : `Overdosed some time before ${day(b.t)} ${clock(b.t)} TCT (from Torn's daily figures).`;
+      return b;
     }
     function withArm(id, r) {
       const o = live(r), a = arm.last[id];
@@ -3038,37 +3050,40 @@
 
       // Rows
       const members = (enemy && enemy.members) || {};
-      const vicFrom = Object.values(d.members).map(m => m.pre && m.pre.v6from).find(Boolean);
       const rows = Object.keys(members).map(id => {
         const r = d.members[id] || {};
         const src = view === 'pre' ? r.pre : r.war;
         return {
           id, name: members[id].name, odNow: r.odNow, ex: r.ex || 0,
           x: src ? src.x : null,
-          v: src ? (view === 'pre' ? src.v6 : src.v) : null,
+          v: src ? (src.v != null ? src.v : null) : null,
           o: src ? src.o : null,
-          inf: influence(side === 'own' ? withArm(id, r) : live(r), now)
+          inf: influence(side === 'own' ? withArm(id, r) : live(r), now),
+          lod: side === 'own' ? null : lastOD(r)
         };
       });
 
       // Summary
       const sum = k => rows.reduce((s, r) => s + (r[k] || 0), 0);
-      const vicLabel = view === 'pre' ? `vicodin last ${war.vicHours}h` : 'vicodin';
-      const vicVal = view === 'pre' && !vicFrom ? '&ndash;' : sum('v');
+      const vicLabel = 'vicodin';
+      const vicVal = rows.some(r => r.v != null) ? sum('v') : '&ndash;';
       html += `<div class="wsp-isum">
         <div><b>${sum('x')}</b><span>xanax</span></div>
         <div><b>${vicVal}</b><span>${vicLabel}</span></div>
         <div><b>${sum('o')}</b><span>overdoses</span></div>
         <div><b>${rows.filter(r => r.x > 0).length}</b><span>took xanax</span></div></div>`;
-      if (view === 'pre' && !vicFrom) html += `<div class="wsp-help" style="padding-top:0">Vicodin counting starts ${war.vicHours} hours before the war (${clock(war.start - war.vicHours * 3600)} TCT).</div>`;
 
       html += '<div class="wsp-legend"><span><i class="x">Xan</i>-35% battle stats, +250 energy</span><span><i class="v">Vic</i>+25% battle stats</span><span><i class="o">OD</i>energy drained, long cooldown</span></div>';
 
       // Table
-      const cols = [['x', 'Xan'], ['v', view === 'pre' ? 'Vic ' + war.vicHours + 'h' : 'Vic'], ['o', 'OD'], ['inf', 'Under influence']];
+      const cols = [['x', 'Xan'], ['v', 'Vic'], ['o', 'OD'], ['inf', side === 'own' ? 'Under influence' : 'Last OD']];
       const key = intel.sort;
       rows.sort((a, b) => {
         if (key === 'name') return a.name.localeCompare(b.name);
+        if (key === 'inf' && side !== 'own') { // active overdoses first, then the most recent
+          const v = r => (r.inf && r.inf.t === 'o' ? 1e12 + r.inf.left : r.lod ? r.lod.t : -1);
+          return v(b) - v(a);
+        }
         if (key === 'inf') return (b.inf ? b.inf.left : -1) - (a.inf ? a.inf.left : -1);
         return (b[key] == null ? -1 : b[key]) - (a[key] == null ? -1 : a[key]);
       });
@@ -3077,18 +3092,23 @@
       for (const r of rows) {
         const cell = (v, hot, warm) => v == null ? '<span class="na">&ndash;</span>'
           : `<span class="${v === 0 ? 'zero' : v >= hot ? 'hot' : v >= warm ? 'warm' : ''}">${v}</span>`;
-        const inf = r.inf ? `<span class="inf ${r.inf.t}" title="${r.inf.text}"><b>${NAME[r.inf.t]}</b>${hm(r.inf.left)}</span>`
+        let inf;
+        if (side !== 'own') { // enemy: an active overdose counts down; otherwise when their last overdose was
+          if (r.inf && r.inf.t === 'o') inf = `<span class="inf o" title="${r.inf.text}"><b>OD</b>${hm(r.inf.left)}</span>`;
+          else if (r.lod) inf = `<span class="lod" title="${r.lod.text}">${r.lod.exact ? '' : '~'}${short(now - r.lod.t)} ago</span>`;
+          else inf = '<span class="na" title="No overdose seen since the tracker started watching">&ndash;</span>';
+        } else inf = r.inf ? `<span class="inf ${r.inf.t}" title="${r.inf.text}"><b>${NAME[r.inf.t]}</b>${hm(r.inf.left)}</span>`
           : '<span class="na" title="No active drug effect seen since the tracker started watching">&ndash;</span>';
         html += `<div class="wsp-irow"><a href="/profiles.php?XID=${r.id}"${r.inf ? ` title="${r.inf.text}"` : ''}>${W.esc(r.name)}${r.odNow ? '<span class="od">OD</span>' : ''}${r.ex ? `<span class="exm" title="${r.ex} more showed up in Torn's stats than the drug cooldowns allow in that time. Torn's figures were catching up, so those were not counted.">+${r.ex}?</span>` : ''}</a>` +
           cell(r.x, 3, 1) + cell(r.v, 2, 1) + cell(r.o, 1, 1) + inf + '</div>';
       }
       html += '<div class="wsp-help" style="padding-top:8px">' + (view === 'pre'
-        ? 'Pre-war: Xanax and overdoses since the war was announced, Vicodin in the last hours before it starts.'
+        ? 'Pre-war: Xanax, Vicodin and overdoses since the war was announced.'
         : 'War: everything since the war started.') +
         ' Xan, Vic and OD counts come from Torn\'s drug totals, which Torn only updates once a day (around midnight TCT), so today\'s use shows tomorrow. OD tags in hospital are live.' +
         (side === 'own'
           ? ' Under influence is live for Xanax and Vicodin taken from the faction armoury' + (arm.err ? ` <span style="color:#ff5a5a">(armoury log unavailable: ${W.esc(arm.err)} - your key needs faction access)</span>` : '') + ', and counts down using Torn\'s average cooldowns (Xanax 7h, Vicodin 5h, overdose about 24h).'
-          : ' Torn shows no live drug use for other factions, so their Under influence only covers overdoses seen in hospital.') +
+          : ' Last OD is exact when the overdose was seen in hospital; ~ means it came from Torn\'s daily figures, so it happened some time before then. An overdose still running counts down (about 24h).') +
         ' Tap and hold for the details.</div>';
       return html;
     }

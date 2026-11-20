@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v3.2 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.3 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -345,14 +345,16 @@ function intelReport() {
   let oldest = Infinity, newest = 0;
   for (const id in W.m) {
     const r = W.m[id];
-    if (!r.b || !r.l) { members[id] = { odNow: r.odNow || 0 }; continue; }
+    if (!r.b || !r.l) { members[id] = { odNow: r.odNow || 0, odSeen: r.odSeen || 0, lo: r.lo2 || null }; continue; }
     oldest = Math.min(oldest, r.l[3]); newest = Math.max(newest, r.l[3]);
     const c = r.cnt || { px: 0, pv6: 0, po: 0, wx: 0, wv: 0, wo: 0 };
     const cs = r.cs || { po: 0, wo: 0 };
     const lo = !r.lo2 ? r.lo || null : !r.lo || r.lo2[1] > r.lo[1] ? r.lo2 : r.lo;
     const v6from = W.start - VICODIN_WINDOW_HOURS * 3600;
     const out = {
-      pre: { x: c.px, o: Math.max(c.po, cs.po), v6: at >= v6from ? c.pv6 : null, v6from: at >= v6from ? v6from : null },
+      pre: { x: c.px, o: Math.max(c.po, cs.po), v6: at >= v6from ? c.pv6 : null, v6from: at >= v6from ? v6from : null,
+             // all Vicodin since counting began, before the war (worked out from the history, so nothing needs resetting)
+             v: (r.h || []).reduce((n, h) => n + (h.length > 5 && h[0] >= W.cntSince && h[1] < W.start ? h[6] : 0), 0) },
       war: at >= W.start ? { x: c.wx, v: c.wv, o: Math.max(c.wo, cs.wo) } : null,
       ex: r.ex || 0,
       lx: r.lx || null, lv: r.lv || null, lo, odNow: r.odNow || 0, odSeen: r.odSeen || 0, checked: r.l[3]
