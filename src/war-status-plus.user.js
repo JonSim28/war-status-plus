@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.63
+// @version      5.64
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.63';
+  const WSP_VERSION = '5.64';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -359,7 +359,6 @@
       S.trackErr = '';
       S.trackDataAt = j.at || 0;
       mergeTracker(j.trips || {});
-      if (Date.now() - (S.actAt || 0) > 10 * 60e3) loadActivity(u);
       if (j.methods) {
         for (const id in j.methods) methods[id] = { m: j.methods[id][0], ts: j.methods[id][2] };
         save('wsp_methods', methods);
@@ -369,23 +368,53 @@
     }
   }
 
-  // When each enemy is usually online (TCT), recorded by the cloud tracker every minute
-  S.act = load('wsp_act', null);
-  async function loadActivity(u) {
-    S.actAt = Date.now();
-    try {
-      const j = await getJSON(u + (u.includes('?') ? '&' : '?') + 'act=1&t=' + Date.now());
-      if (j && j.m) { S.act = j; save('wsp_act', j); S.dirty = true; }
-    } catch (e) { /* older tracker: no activity yet */ }
+  // Average time online per day: Torn keeps daily history of 'time played', so compare today with 30 days ago
+  S.daily = load('wsp_daily', {}); // id -> { d: seconds a day, src: '30d' | 'all', at }
+  S.dailyNext = 0;
+  async function timePlayed(id, ts) {
+    const key = getKey();
+    const j = await getJSON(`https://api.torn.com/v2/user/${id}/personalstats?stat=timeplayed${ts ? '&timestamp=' + ts : ''}&key=${key}&comment=WarStatusPlus`);
+    if (j && j.error) { const e = new Error(j.error.error); e.code = j.error.code; throw e; }
+    const ps = j && j.personalstats;
+    if (Array.isArray(ps)) { const x = ps.find(e => e && e.name === 'timeplayed'); return x ? +x.value : null; }
+    if (ps && typeof ps === 'object') {
+      if (ps.timeplayed != null) return +ps.timeplayed;
+      for (const k in ps) if (ps[k] && typeof ps[k] === 'object' && ps[k].timeplayed != null) return +ps[k].timeplayed;
+    }
+    return null;
   }
-  const hh = h => String(h % 24).padStart(2, '0');
-  function actCell(id) {
-    const A = S.act;
-    const r = A && S.enemy && String(A.fid) === String(S.enemy.ID) ? A.m[id] : undefined;
-    if (!r) return `<span class="wsp-act none" title="${A && String(A.fid) === String(S.enemy && S.enemy.ID) ? 'Not seen online enough yet' : 'The tracker is not watching this faction yet (needs tracker v3.0)'}">&ndash;</span>`;
-    const peak = r.h.indexOf(Math.max.apply(null, r.h));
-    const tip = `Most online ${hh(r.s)}:00-${hh(r.s + 3)}:00 TCT (${r.p}% of their online time${r.src === 'war' ? ' during wars' : ''}). Busiest hour ${hh(peak)}:00. Based on ${r.on} minutes seen online${r.src === 'war' ? ' in ranked wars' : ''}.`;
-    return `<span class="wsp-act${r.src === 'war' ? ' war' : ''}" title="${tip}">${hh(r.s)}-${hh(r.s + 3)}</span>`;
+  async function loadDaily(id) {
+    const now = Math.floor(Date.now() / 1000);
+    const cur = await timePlayed(id);
+    let old = null;
+    try { old = await timePlayed(id, now - 30 * 86400); } catch (e) { /* no history */ }
+    let rec;
+    if (cur != null && old != null && old > 0 && cur >= old) rec = { d: (cur - old) / 30, src: '30d', tot: cur - old };
+    else if (cur != null) { // younger than a month (or no history): all-time average
+      const p = await api(`user/${id}`, 'profile');
+      const age = Math.max(1, +p.age || 1);
+      rec = { d: cur / age, src: 'all', tot: cur, age };
+    }
+    if (rec && !(rec.d >= 0 && rec.d <= 86400)) rec.d = null; // can't be more than a whole day
+    if (rec) { rec.at = Date.now(); S.daily[id] = rec; save('wsp_daily', S.daily); S.dirty = true; }
+  }
+  function dailyTick(now) {
+    if (now < S.dailyNext || S.dailyBusy || !S.enemy || !S.enemy.members || !getKey()) return;
+    const id = Object.keys(S.enemy.members).find(i => !S.daily[i] || now - S.daily[i].at > 20 * 3600e3);
+    // gentle on the API: one player every 5s, every 10s while the fast hospital watch is busy
+    S.dailyNext = now + (S.fast && S.fast.watch ? 10000 : 5000);
+    if (!id) return;
+    S.dailyBusy = true;
+    loadDaily(id).catch(() => { S.daily[id] = { d: null, at: Date.now() - 18 * 3600e3 }; }).then(() => { S.dailyBusy = false; });
+  }
+  const hmShort = sec => { const m = Math.round(sec / 60); return m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); };
+  function dailyCell(id) {
+    const r = S.daily[id];
+    if (!r || r.d == null) return `<span class="wsp-act none" title="${r ? 'Torn did not return their time played' : 'Loading time played...'}">&ndash;</span>`;
+    const tip = r.src === '30d'
+      ? `Online about ${hmShort(r.d)} a day over the last 30 days (${Math.round(r.tot / 3600)}h in total).`
+      : `Account is under a month old: about ${hmShort(r.d)} a day over ${r.age} days.`;
+    return `<span class="wsp-act${r.d >= 8 * 3600 ? ' hi' : r.d < 3600 ? ' lo' : ''}" title="${tip}">${hmShort(r.d)}${r.src === 'all' ? '*' : ''}</span>`;
   }
 
   function mergeTracker(remote) {
@@ -1251,7 +1280,8 @@
   .wsp-ff.none{color:var(--faint);}
   .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 40px 40px 92px 46px;gap:5px;}
   .wsp-act{font:600 10.5px/1 var(--num,inherit);text-align:center;color:var(--fg);white-space:nowrap;padding:3px 0;border-radius:3px;background:rgba(255,255,255,.06);}
-  .wsp-act.war{color:#ffb547;background:rgba(255,170,40,.12);}
+  .wsp-act.hi{color:#ffb547;background:rgba(255,170,40,.12);}
+  .wsp-act.lo{color:var(--muted);}
   .wsp-act.none{background:none;color:var(--muted);}
   .wsp-ff.same{background:var(--pill);color:var(--muted);}
   .wsp-ff.live{box-shadow:inset 0 0 0 2px rgba(255,255,255,.85);}
@@ -2235,7 +2265,7 @@
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
       <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
-      ${kind === 'enemy' ? ffCell(id) + actCell(id) : ''}
+      ${kind === 'enemy' ? ffCell(id) + dailyCell(id) : ''}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
     </div>`;
@@ -2427,7 +2457,7 @@
       let html = '', last = null;
       if (kind === 'enemy' && rows.length) {
         html += '<div class="wsp-row en wsp-colhead"><span></span><span>Member</span><span title="FFScouter battle stat estimate">FF</span>' +
-          '<span title="TCT hours they are usually online (from ranked wars once there is enough war data; orange = war-time)">Active</span><span>Status</span><span></span></div>';
+          '<span title="Average time online per day over the last 30 days (* = account under a month old, all-time average)">Daily</span><span>Status</span><span></span></div>';
       }
       if (nextOut.length) {
         html += '<div class="wsp-next"><span class="lbl">Next out</span>' + nextOut.map(x =>
@@ -2687,6 +2717,7 @@
       }
       checkAlerts();
       fastTick(now);
+      if (S.open) dailyTick(now);
     }
     if (S.open && cfg.callsUrl && now - S.callsAt > CALLS_MS) loadCalls();
     const ad = S.open && S.view === 'list' && ADDONS[S.tab];
