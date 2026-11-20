@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.62
+// @version      5.63
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.62';
+  const WSP_VERSION = '5.63';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -359,6 +359,7 @@
       S.trackErr = '';
       S.trackDataAt = j.at || 0;
       mergeTracker(j.trips || {});
+      if (Date.now() - (S.actAt || 0) > 10 * 60e3) loadActivity(u);
       if (j.methods) {
         for (const id in j.methods) methods[id] = { m: j.methods[id][0], ts: j.methods[id][2] };
         save('wsp_methods', methods);
@@ -366,6 +367,25 @@
     } catch (e) {
       S.trackErr = 'Tracker unreachable';
     }
+  }
+
+  // When each enemy is usually online (TCT), recorded by the cloud tracker every minute
+  S.act = load('wsp_act', null);
+  async function loadActivity(u) {
+    S.actAt = Date.now();
+    try {
+      const j = await getJSON(u + (u.includes('?') ? '&' : '?') + 'act=1&t=' + Date.now());
+      if (j && j.m) { S.act = j; save('wsp_act', j); S.dirty = true; }
+    } catch (e) { /* older tracker: no activity yet */ }
+  }
+  const hh = h => String(h % 24).padStart(2, '0');
+  function actCell(id) {
+    const A = S.act;
+    const r = A && S.enemy && String(A.fid) === String(S.enemy.ID) ? A.m[id] : undefined;
+    if (!r) return `<span class="wsp-act none" title="${A && String(A.fid) === String(S.enemy && S.enemy.ID) ? 'Not seen online enough yet' : 'The tracker is not watching this faction yet (needs tracker v3.0)'}">&ndash;</span>`;
+    const peak = r.h.indexOf(Math.max.apply(null, r.h));
+    const tip = `Most online ${hh(r.s)}:00-${hh(r.s + 3)}:00 TCT (${r.p}% of their online time${r.src === 'war' ? ' during wars' : ''}). Busiest hour ${hh(peak)}:00. Based on ${r.on} minutes seen online${r.src === 'war' ? ' in ranked wars' : ''}.`;
+    return `<span class="wsp-act${r.src === 'war' ? ' war' : ''}" title="${tip}">${hh(r.s)}-${hh(r.s + 3)}</span>`;
   }
 
   function mergeTracker(remote) {
@@ -489,13 +509,6 @@
     if (!cfg.ff || !f || f.ff == null) return '<span class="wsp-ff none">&ndash;</span>';
     const [bg, fg] = ffColors(f.ff);
     return `<span class="wsp-ff" style="background:${bg};color:${fg}" title="FFScouter estimate, fair fight ${f.ff.toFixed(2)}">${esc(f.bs || '?')}</span>`;
-  }
-  function liveCell(id) {
-    const l = cfg.ff ? liveFF(id) : null;
-    if (!l) return '<span class="wsp-ff none">&ndash;</span>';
-    if (!l.d) return `<span class="wsp-ff same" title="No Xanax or Vicodin effect seen right now (an overdose doesn't change battle stats), so the same as FF">${esc(l.bs || '?')}</span>`;
-    const [bg, fg] = ffColors(l.ff);
-    return `<span class="wsp-ff live ${l.d.cls}" style="background:${bg};color:${fg}" title="On ${l.d.name}: battle stats x${l.d.f}, fair fight about ${l.ff.toFixed(2)}">${esc(l.bs)}</span>`;
   }
 
   /* ================= Target calling (shared server) ================= */
@@ -1237,6 +1250,9 @@
   .wsp-ff{font-size:10px;font-weight:700;text-align:center;border-radius:3px;padding:2px 0;}
   .wsp-ff.none{color:var(--faint);}
   .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 40px 40px 92px 46px;gap:5px;}
+  .wsp-act{font:600 10.5px/1 var(--num,inherit);text-align:center;color:var(--fg);white-space:nowrap;padding:3px 0;border-radius:3px;background:rgba(255,255,255,.06);}
+  .wsp-act.war{color:#ffb547;background:rgba(255,170,40,.12);}
+  .wsp-act.none{background:none;color:var(--muted);}
   .wsp-ff.same{background:var(--pill);color:var(--muted);}
   .wsp-ff.live{box-shadow:inset 0 0 0 2px rgba(255,255,255,.85);}
   .wsp-ff.live.up::after{content:"\\25B2";font-size:7px;margin-left:1px;vertical-align:1px;}
@@ -2219,7 +2235,7 @@
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
       <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
-      ${kind === 'enemy' ? ffCell(id) + liveCell(id) : ''}
+      ${kind === 'enemy' ? ffCell(id) + actCell(id) : ''}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
     </div>`;
@@ -2411,7 +2427,7 @@
       let html = '', last = null;
       if (kind === 'enemy' && rows.length) {
         html += '<div class="wsp-row en wsp-colhead"><span></span><span>Member</span><span title="FFScouter battle stat estimate">FF</span>' +
-          '<span title="FF adjusted for drugs they are on now: Vicodin +25%, Xanax -35%">Live</span><span>Status</span><span></span></div>';
+          '<span title="TCT hours they are usually online (from ranked wars once there is enough war data; orange = war-time)">Active</span><span>Status</span><span></span></div>';
       }
       if (nextOut.length) {
         html += '<div class="wsp-next"><span class="lbl">Next out</span>' + nextOut.map(x =>

@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v2.9 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.0 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -8,6 +8,9 @@
  *      - pre-war: Xanax since the war was announced, Vicodin in the last 6 hours, overdoses
  *      - during the war: Xanax, Vicodin and overdoses since it started
  *      - when each enemy last took a Xanax
+ *
+ * 3. Activity (enemy mode): which TCT hours each enemy is online, with a separate count for
+ *    ranked-war time, so War Status+ can show when they're most active.
  *
  * Two trackers: run one with WATCH = 'enemy' (also records flight times) and, on a second free
  * Google account, one with WATCH = 'own' to watch your own faction's drug use.
@@ -70,6 +73,7 @@ function run() {
     if (eid) {
       const enemy = api(`faction/${eid}`, 'basic');
       record(enemy, now);
+      activity(enemy, war, now);
       if (war) watchWar(war, enemy, now);
     }
   }
@@ -134,6 +138,57 @@ function destOf(d) {
 function isFlying(st) {
   if (st.state === 'Traveling') return true;
   return /from\s+torn\s+to|travel+ing\s+to|returning\s+to\s+torn/i.test(st.description || '');
+}
+
+/* ------------------------- activity ------------------------- */
+// Per member: a[h] = minutes seen online in TCT hour h (all the time), w[h] = the same during ranked wars.
+// Old minutes fade each day (a by 10%, w by 3%) so the picture follows their current habits.
+function activity(f, war, now) {
+  const fid = String(f.ID);
+  let A = getBig('act');
+  if (!A || A.fid !== fid) A = { fid, since: now, day: Math.floor(now / 86400), m: {} };
+  const day = Math.floor(now / 86400);
+  if (day !== A.day) {
+    for (const id in A.m) {
+      A.m[id].a = A.m[id].a.map(v => Math.round(v * 0.9 * 10) / 10);
+      A.m[id].w = A.m[id].w.map(v => Math.round(v * 0.97 * 10) / 10);
+    }
+    A.day = day;
+  }
+  const h = new Date(now * 1000).getUTCHours();
+  const inWar = !!(war && now >= war.start && (!war.end || now < war.end));
+  const next = {};
+  for (const id in (f.members || {})) {
+    const r = A.m[id] || { a: new Array(24).fill(0), w: new Array(24).fill(0) };
+    const la = f.members[id].last_action || {};
+    if (la.status === 'Online') { r.a[h] += 1; if (inWar) r.w[h] += 1; }
+    next[id] = r;
+  }
+  A.m = next; // members who left are dropped
+  if (inWar) A.war = (A.war || 0) + 1; // minutes of war watched
+  putBig('act', A);
+}
+
+// Each member's busiest 3-hour stretch (TCT), from war time when there's enough of it
+function activityReport() {
+  const A = getBig('act');
+  if (!A) return { error: 'no activity yet' };
+  const out = { fid: A.fid, since: A.since, warMinutes: A.war || 0, m: {} };
+  const best = arr => {
+    let top = -1, s = 0;
+    for (let i = 0; i < 24; i++) { const v = arr[i] + arr[(i + 1) % 24] + arr[(i + 2) % 24]; if (v > top) { top = v; s = i; } }
+    return { s, v: top };
+  };
+  const sum = arr => arr.reduce((x, y) => x + y, 0);
+  for (const id in A.m) {
+    const r = A.m[id], tw = sum(r.w), ta = sum(r.a);
+    const useWar = tw >= 60; // an hour of war-time online to go on
+    const arr = useWar ? r.w : r.a, tot = useWar ? tw : ta;
+    if (tot < 30) { out.m[id] = null; continue; }
+    const b = best(arr);
+    out.m[id] = { s: b.s, p: Math.round(b.v / tot * 100), src: useWar ? 'war' : 'all', on: Math.round(tot), h: arr.map(v => Math.round(v)) };
+  }
+  return out;
 }
 
 /* ------------------------- war intel ------------------------- */
@@ -251,6 +306,7 @@ function drugFigures(ps) {
 function doGet(e) {
   const P = PropertiesService.getScriptProperties();
   if (e.parameter.intel) return json(intelReport());
+  if (e.parameter.act) return json(activityReport());
   if (e.parameter.probe) { // e.g. ...exec?probe=1234567 : the same player's totals from every kind of request
     const id = e.parameter.probe, out = { using: SOURCE };
     ['v2cat', 'v1cat', 'v2stat', 'v1stat'].forEach(src => {
