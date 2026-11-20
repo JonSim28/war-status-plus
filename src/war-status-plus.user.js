@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.71
+// @version      5.72
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.71';
+  const WSP_VERSION = '5.72';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1223,6 +1223,15 @@
   .wsp-ccols .h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:5px 6px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wsp-crow{display:grid;grid-template-columns:6px minmax(0,1fr) 36px 60px;gap:3px;align-items:center;padding:6px 5px;border-bottom:1px solid var(--line2);cursor:pointer;-webkit-tap-highlight-color:transparent;}
   .wsp-crow .wsp-dot{width:6px;height:6px;}
+  .wsp-crow.us{grid-template-columns:6px minmax(0,1fr) 30px 32px 40px;gap:2px;}
+  .wsp-crow.us .v{letter-spacing:-.3px;}
+  .wsp-crow.us .v::after{display:none;}
+  .wsp-crow.us .v.live.down{box-shadow:inset 0 0 0 1.5px #ff8a8a;}
+  .wsp-crow.us .v.live.up{box-shadow:inset 0 0 0 1.5px #7dffa8;}
+  .wsp-crow .v.ff{color:var(--muted);}
+  .wsp-crow .v.live{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.8);}
+  .wsp-crow.hd{cursor:default;padding:2px 5px;border-bottom:1px solid var(--line);}
+  .wsp-crow.hd span{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);text-align:right;}
   .wsp-crow .n{font-weight:600;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wsp-crow .v{font-size:10.5px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;border-radius:3px;padding:1px 2px;}
   .wsp-crow .v.up::after{content:"\\25B2";font-size:6px;vertical-align:2px;}
@@ -2595,7 +2604,7 @@
     if (!f) return null;
     const n = f.n != null ? f.n : parseHuman(f.bs);
     if (n == null) return null;
-    const inf = (side === 'mine' ? S.influenceMine : S.influence)[id] || {};
+    const inf = (side === 'mine' ? S.influenceMine : side === 'enemy' ? S.influence : {})[id] || {};
     const d = DRUG_FX[inf.fx != null ? inf.fx : inf.t];
     return { n: n * (d ? d.f : 1), d };
   }
@@ -2608,7 +2617,7 @@
       // Ours: online first, then idle, then offline (each by status). Theirs: by status, online first among the available.
       const k = side === 'mine' ? on * 100 + st.r * 10 + (st.left ? st.left / 1e6 : 0)
         : st.r * 10 + (st.r === 0 ? on : 0) + (st.left ? st.left / 1e6 : 0);
-      return { id, m, st, on, ls: liveStats(id, side), k };
+      return { id, m, st, on, ls: liveStats(id, side), ff: liveStats(id, 'none'), k };
     }).sort((a, b) => a.k - b.k || (b.ls ? b.ls.n : 0) - (a.ls ? a.ls.n : 0));
   }
   function ratioClass(r) { return r < 0.75 ? 'easy' : r <= 1.1 ? 'even' : 'hard'; }
@@ -2620,9 +2629,10 @@
       if (side === 'enemy' && ours && x.ls) vcls += ' ' + ratioClass(x.ls.n / ours.n);
       const online = (x.m.last_action && x.m.last_action.status) || 'Offline';
       const beat = side === 'enemy' && callSel.mine && hasBeaten(callSel.mine, x.id);
-      return `<div class="wsp-crow${sel ? ' sel' : ''}${beat ? ' beaten' : ''}" data-act="cpick" data-side="${side}" data-id="${x.id}"${beat ? ' title="Already beaten this war by your pick"' : ''}>
+      const ffCol = side === 'mine' ? `<span class="v ff" title="FFScouter estimate">${x.ff ? human(x.ff.n) : '&ndash;'}</span>` : '';
+      return `<div class="wsp-crow${side === 'mine' ? ' us' : ''}${sel ? ' sel' : ''}${beat ? ' beaten' : ''}" data-act="cpick" data-side="${side}" data-id="${x.id}"${beat ? ' title="Already beaten this war by your pick"' : ''}>
         <span class="wsp-dot ${esc(online)}"></span><span class="n">${beat ? '<b class="ck">&#10003;</b>' : ''}${esc(x.m.name)}</span>
-        <span class="v${vcls}" title="${x.ls ? 'Live stat estimate' + (x.ls.d ? ', on ' + x.ls.d.name : '') : 'No estimate'}">${x.ls ? human(x.ls.n) : '&ndash;'}</span>
+        ${ffCol}<span class="v${vcls}${x.ls && x.ls.d ? ' live' : ''}" title="${x.ls ? (side === 'mine' ? 'Live: FF adjusted for a Xanax/Vicodin from the faction armoury' + (x.ls.d ? ' - on ' + x.ls.d.name + ' now' : ' - nothing running, same as FF') : 'FFScouter estimate') : 'No estimate'}">${x.ls ? human(x.ls.n) : '&ndash;'}</span>
         <span class="s" style="color:${x.st.c}">${x.st.h}</span></div>`;
     }).join('') || '<div class="wsp-msg">Loading...</div>';
   }
@@ -2642,10 +2652,10 @@
     }
     return `<div class="wsp-cbar">${bar}</div>
       <div class="wsp-ccols">
-        <div class="col"><div class="h">${esc(S.mine.name)}</div>${callColumn('mine')}</div>
-        <div class="col"><div class="h">${esc(S.enemy.name)}</div>${callColumn('enemy')}</div>
+        <div class="col"><div class="h">${esc(S.mine.name)}</div><div class="wsp-crow us hd"><span></span><span></span><span>FF</span><span>Live</span><span></span></div>${callColumn('mine')}</div>
+        <div class="col"><div class="h">${esc(S.enemy.name)}</div><div class="wsp-crow hd"><span></span><span></span><span>FF</span><span></span></div>${callColumn('enemy')}</div>
       </div>
-      <div class="wsp-help" style="padding-top:8px">Numbers are live battle stat estimates (FFScouter, adjusted for Xanax and Vicodin when the trackers have seen them). Once one of ours is picked, targets turn green (easier), amber (even) or red (harder) for them, and anyone they have already beaten this war gets a green row with a tick (needs faction API access). Copy call puts the call on your clipboard; paste it in faction chat and send.</div>`;
+      <div class="wsp-help" style="padding-top:8px">Numbers are FFScouter battle stat estimates. For ours, Live adjusts FF for a Xanax (-35%) or Vicodin (+25%) taken from the faction armoury that is still running (outlined). Once one of ours is picked, targets turn green (easier), amber (even) or red (harder) for them, and anyone they have already beaten this war gets a green row with a tick (needs faction API access). Copy call puts the call on your clipboard; paste it in faction chat and send.</div>`;
   }
   function copyText(t, done) {
     const fallback = () => {
