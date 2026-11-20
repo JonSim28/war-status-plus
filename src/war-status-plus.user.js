@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.74
+// @version      5.75
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.74';
+  const WSP_VERSION = '5.75';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -754,10 +754,11 @@
     const r = S.rev && S.rev[id];
     if (!r || Date.now() - r.at > 30 * 60e3) return '';
     // only when anyone can revive them (setting "Everyone"), for both sides
-    const on = r.set ? /every/i.test(r.set) : (kind === 'enemy' && r.rv);
+    const known = r.set && !/unknown/i.test(r.set); // Torn may not tell other factions the setting
+    const on = known ? /every/i.test(r.set) : (kind === 'enemy' && r.rv);
     if (!on) return '';
     // enemies: anyone (or their faction) can bring them back early; ours: they should switch revives off
-    const who = r.set ? r.set : 'Revivable';
+    const who = known ? r.set : 'Revivable';
     return kind === 'enemy'
       ? `<small class="wsp-rev en" title="Revives: ${esc(who)}">REV</small>`
       : `<small class="wsp-rev us" title="Revives: ${esc(who)} \u2014 turn them off during war">REV ON</small>`;
@@ -1204,8 +1205,9 @@
   .wsp-fly.guess{opacity:.75;}
   .wsp-wt{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px;}
   .wsp-wt.en{color:#ff8a8a;} .wsp-wt.us{color:#9fd8ae;} .wsp-wt.us.zero{color:var(--muted);opacity:.8;}
+  .wsp-meta .wsp-rev{margin:0 5px 0 0;vertical-align:0;}
   .wsp-rev{display:inline-block;margin-left:5px;padding:0 4px;border-radius:3px;font-size:9px;font-weight:800;letter-spacing:.4px;line-height:14px;vertical-align:1px;}
-  .wsp-rev.en{background:rgba(255,176,0,.18);color:#ffb000;border:1px solid rgba(255,176,0,.5);}
+  .wsp-rev.en{background:rgba(255,77,77,.18);color:#ff6b6b;border:1px solid rgba(255,77,77,.55);}
   .wsp-rev.us{background:rgba(255,77,77,.18);color:#ff6b6b;border:1px solid rgba(255,77,77,.55);}
   .wsp-meta{display:block;font-size:9.5px;line-height:1.15;color:var(--muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   .wsp-name .wsp-retal{color:#fff;background:var(--hot);border-radius:3px;padding:0 3px;opacity:1;font-weight:700;}
@@ -2320,7 +2322,7 @@
         : `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack one of ours (e.g. to hospitalise them)">ATK</button>`;
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
-      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
+      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">${revTag(id, kind)}Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
       ${ffCell(id) + (kind === 'enemy' ? '' : liveCell(id)) + dailyCell(id) + warCell(id, kind)}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
