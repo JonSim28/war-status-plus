@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.73
+// @version      5.74
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.73';
+  const WSP_VERSION = '5.74';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -60,7 +60,7 @@
   const PILL_V = '<svg class="wsp-pill" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="5.6" fill="#f4f4f4" stroke="#9aa0a6" stroke-width="1"/><path d="M5.5 12h13" stroke="#b8bcc2" stroke-width=".9"/></svg>';
 
   const DEFAULTS = {
-    sound: true, vibrate: true, hospAlert: true, landAlert: true,
+    sound: true, vibrate: true, hospAlert: true, earlyAlert: true, landAlert: true,
     chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', fastCalls: 60, energyAlert: false, energyWarn: 10, energyCd: 60,
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
@@ -1003,7 +1003,10 @@
       const wa = where(a), wb = where(b);
       if (a.state === 'Hospital' && (b.state === 'Okay' || b.state === 'Abroad') && wb.loc === myLoc) {
         S.outAt[id] = Date.now();
-        if (cfg.hospAlert) fire(`out-${id}-${a.until}`, `✅ ${m.name} is out of hospital`, true, id);
+        // out well before their timer: revived or medded out (its own switch in Settings)
+        const early = a.until && a.until - Date.now() / 1000 > 20;
+        if (early) { if (cfg.earlyAlert) fire(`out-${id}-${a.until}`, `⚡ ${m.name} is out of hospital early (revived or medded out)`, true, id); }
+        else if (cfg.hospAlert) fire(`out-${id}-${a.until}`, `✅ ${m.name} is out of hospital`, true, id);
       }
       if (wa.travel && !wb.travel && wb.loc === myLoc && cfg.landAlert) {
         fire(`land-${id}-${a.description}`, `🛬 ${m.name} landed in ${short(myLoc)}`, false, id);
@@ -2332,7 +2335,8 @@
       ${ck('popups', 'Pop-up messages (off = sound / vibrate only)')}
       ${ck('sound', 'Sound')}
       ${ck('vibrate', 'Vibrate (Android only)')}
-      ${ck('hospAlert', 'Enemy leaving hospital at your location')}
+      ${ck('hospAlert', 'Enemy leaving hospital at your location (timer ran out)')}
+      ${ck('earlyAlert', 'Enemy out of hospital early at your location (revived or medded out)')}
       ${ck('landAlert', 'Enemy landing at your location')}
       ${ck('retalAlert', 'Retaliation chances')}
       ${ck('bonusAlert', 'Next hit is a chain bonus')}
@@ -2403,7 +2407,7 @@
   }
 
   function saveSettings() {
-    ['popups', 'sound', 'vibrate', 'hospAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'energyAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
+    ['popups', 'sound', 'vibrate', 'hospAlert', 'earlyAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'energyAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
     cfg.chainMin = Math.max(1, parseInt($('wsp-c-chainMin').value, 10) || 10);
     cfg.energyWarn = Math.max(0, Math.min(120, parseInt($('wsp-c-energyWarn').value, 10) || 0));
     cfg.energyCd = Math.max(0, Math.min(600, parseInt($('wsp-c-energyCd').value, 10) || 0));
