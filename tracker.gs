@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v3.1 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.2 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -9,8 +9,8 @@
  *      - during the war: Xanax, Vicodin and overdoses since it started
  *      - when each enemy last took a Xanax
  *
- * 3. War activity (enemy mode): from the moment a ranked war starts, counts the minutes each
- *    enemy shows Online (and Idle), so War Status+ can show how active they've been this war.
+ * 3. War activity: from the moment a ranked war starts, counts the minutes each
+ *    member of the watched faction shows Online (and Idle), so War Status+ can show how active they've been this war.
  *
  * Two trackers: run one with WATCH = 'enemy' (also records flight times) and, on a second free
  * Google account, one with WATCH = 'own' to watch your own faction's drug use.
@@ -67,7 +67,7 @@ function run() {
     }
   }
   if (own) {
-    if (war) watchWar(war, mine, now);
+    if (war) { activity(mine, war, now); watchWar(war, mine, now); }
   } else {
     if (!eid) eid = ENEMY_FACTION_ID;
     if (eid) {
