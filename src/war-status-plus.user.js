@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.68
+// @version      5.69
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.68';
+  const WSP_VERSION = '5.69';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1314,8 +1314,8 @@
   .wsp-call{border:none;background:none;padding:0 3px 0 0;font-size:12px;cursor:pointer;}
   .wsp-ff{font-size:10px;font-weight:700;text-align:center;border-radius:3px;padding:2px 0;}
   .wsp-ff.none{color:var(--faint);}
-  .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 46px;gap:4px;}
-  .wsp-row.us{grid-template-columns:6px minmax(0,1fr) 36px 36px 31px 31px 70px 46px;gap:3px;}
+  .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 28px;gap:4px;}
+  .wsp-row.us{grid-template-columns:6px minmax(0,1fr) 36px 36px 31px 31px 78px 28px;gap:3px;}
   .wsp-row.us .wsp-ff{white-space:nowrap;overflow:hidden;letter-spacing:-.3px;}
   .wsp-row.us .wsp-ff.live::after{display:none;}
   .wsp-row.us .wsp-ff.live.down{box-shadow:inset 0 0 0 2px #ff8a8a;}
@@ -1337,6 +1337,7 @@
   .wsp-arrow{color:var(--arrow);font-weight:900;font-size:1.15em;}
   .wsp-atk{background:var(--attack);color:var(--attackText);border:none;border-radius:5px;padding:4px 0;font-weight:600;font-size:11px;cursor:pointer;}
   .wsp-atk.rev{background:var(--revive);}
+  .wsp-row.en .wsp-atk,.wsp-row.us .wsp-atk{font-size:9.5px !important;letter-spacing:0 !important;padding:5px 0 4px !important;}
   .wsp-hsum{padding:6px 10px;font-weight:600;background:var(--surface);border-bottom:1px solid var(--line);}
   .wsp-hrow{display:grid;grid-template-columns:36px minmax(0,1fr) 88px 48px;gap:6px;padding:4px 10px;border-bottom:1px solid var(--line2);align-items:center;}
   .wsp-hrow > span:first-child{color:var(--muted);}
@@ -1390,8 +1391,8 @@
   #wsp-panel.dark .wsp-chip{font-family:var(--num);border-color:rgba(255,176,0,.35);background:transparent;border-radius:3px;}
   #wsp-panel.dark .wsp-grp[data-key="enemy:-1"]{color:#ff5252;border-left-color:#ff5252;background:linear-gradient(90deg,rgba(255,59,59,.16),transparent 70%);}
   #wsp-panel.dark .wsp-row{background:rgba(12,16,14,.72);grid-template-columns:7px minmax(0,1fr) 98px 56px;}
-  #wsp-panel.dark .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 54px;}
-  #wsp-panel.dark .wsp-row.us{grid-template-columns:6px minmax(0,1fr) 36px 36px 31px 31px 70px 54px;}
+  #wsp-panel.dark .wsp-row.en{grid-template-columns:7px minmax(0,1fr) 37px 34px 34px 92px 30px;}
+  #wsp-panel.dark .wsp-row.us{grid-template-columns:6px minmax(0,1fr) 36px 36px 31px 31px 78px 30px;}
   #wsp-panel.dark .wsp-colhead span{font-family:var(--cond);font-size:11px;letter-spacing:1px;color:var(--accent);}
   #wsp-panel.dark .wsp-row.called{background:var(--called);} #wsp-panel.dark .wsp-row.mine-call{background:var(--mine);}
   #wsp-panel.dark .wsp-name a{letter-spacing:.2px;}
@@ -2301,10 +2302,10 @@
     const rt = kind === 'enemy' && retalLeft(id) > 0
       ? `<small class="wsp-retal" data-until="${S.retals[id].until}" title="Hit ${esc(S.retals[id].victim)}">🔁${fmt(retalLeft(id))}</small>` : '';
     const action = kind === 'enemy'
-      ? `<button class="wsp-atk" data-act="attack" data-id="${id}">Attack</button>`
+      ? `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack">ATK</button>`
       : st.state === 'Hospital' && hospLeft(st) > 0 && canRevive(id)
-        ? `<button class="wsp-atk rev" data-act="profile" data-id="${id}">Revive</button>`
-        : `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack one of ours (e.g. to hospitalise them)">Attack</button>`;
+        ? `<button class="wsp-atk rev" data-act="profile" data-id="${id}" title="Revive">REV</button>`
+        : `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack one of ours (e.g. to hospitalise them)">ATK</button>`;
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
       <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
