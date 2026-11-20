@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.75
+// @version      5.76
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.75';
+  const WSP_VERSION = '5.76';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1205,7 +1205,9 @@
   .wsp-fly.guess{opacity:.75;}
   .wsp-wt{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px;}
   .wsp-wt.en{color:#ff8a8a;} .wsp-wt.us{color:#9fd8ae;} .wsp-wt.us.zero{color:var(--muted);opacity:.8;}
-  .wsp-meta .wsp-rev{margin:0 5px 0 0;vertical-align:0;}
+  .wsp-l1{display:flex;align-items:center;min-width:0;}
+  .wsp-l1 > a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto;}
+  .wsp-l1 > *:not(a){flex-shrink:0;}
   .wsp-rev{display:inline-block;margin-left:5px;padding:0 4px;border-radius:3px;font-size:9px;font-weight:800;letter-spacing:.4px;line-height:14px;vertical-align:1px;}
   .wsp-rev.en{background:rgba(255,77,77,.18);color:#ff6b6b;border:1px solid rgba(255,77,77,.55);}
   .wsp-rev.us{background:rgba(255,77,77,.18);color:#ff6b6b;border:1px solid rgba(255,77,77,.55);}
@@ -2322,7 +2324,7 @@
         : `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack one of ours (e.g. to hospitalise them)">ATK</button>`;
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
-      <span class="wsp-name">${callBtn}<a href="/profiles.php?XID=${id}">${esc(m.name)}</a>${warTag(id, kind)}${rt}${caller}${hit}<span class="wsp-meta">${revTag(id, kind)}Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
+      <span class="wsp-name"><span class="wsp-l1">${callBtn}<a href="/profiles.php?XID=${id}" title="${esc(m.name)}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}</span><span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
       ${ffCell(id) + (kind === 'enemy' ? '' : liveCell(id)) + dailyCell(id) + warCell(id, kind)}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
