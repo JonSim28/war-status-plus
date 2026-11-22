@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus (auto-updating)
 // @namespace    torn-war-status-plus
-// @version      1.2
+// @version      1.3
 // @description  Loads the latest JSim War Station Plus from your faction's script address, so updates arrive by themselves
 // @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
@@ -69,7 +69,8 @@
       try {
         Promise.resolve(PDA_evaluateJavascript(code)).then(function () { setTimeout(clearGlobals, 3000); }, function (e) { note('PDA evaluate failed: ' + e); });
       } catch (e) { note('PDA evaluate failed: ' + e.message); }
-    } else note('script tag blocked and PDA evaluator missing');
+    } else if (GMX) note('this browser does not allow the auto-loader. On a computer, remove this script and install the PC version instead: https://raw.githubusercontent.com/JonSim28/war-status-plus/main/war-status-plus.user.js');
+    else note('script tag blocked and PDA evaluator missing');
   }
 
   // If nothing has started after 12 seconds, say why on screen instead of failing silently

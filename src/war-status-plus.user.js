@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.91
+// @version      5.92
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
@@ -12,6 +12,8 @@
 // @connect      raw.githubusercontent.com
 // @connect      *
 // @run-at       document-end
+// @updateURL    https://raw.githubusercontent.com/JonSim28/war-status-plus/main/war-status-plus.user.js
+// @downloadURL  https://raw.githubusercontent.com/JonSim28/war-status-plus/main/war-status-plus.user.js
 // ==/UserScript==
 
 /*
@@ -44,7 +46,7 @@
     trackerUrl2: 'https://script.google.com/macros/s/AKfycbyPTSFRfxwQ3TaT3K9ZS5O8YrhzOk0RjpfS5T_0WpnzEFlj6rpG5mdfmhx6a9-lTrjC/exec'
   };
 
-  const WSP_VERSION = '5.91';
+  const WSP_VERSION = '5.92';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
