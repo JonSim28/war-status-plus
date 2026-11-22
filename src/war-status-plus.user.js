@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.86
+// @version      5.87
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.86';
+  const WSP_VERSION = '5.87';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -60,7 +60,7 @@
   const PILL_V = '<svg class="wsp-pill" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="5.6" fill="#f4f4f4" stroke="#9aa0a6" stroke-width="1"/><path d="M5.5 12h13" stroke="#b8bcc2" stroke-width=".9"/></svg>';
 
   const DEFAULTS = {
-    sound: true, vibrate: true, hospAlert: true, earlyAlert: true, landAlert: true, shareMe: false,
+    sound: true, vibrate: true, hospAlert: true, earlyAlert: true, landAlert: true, shareMe: true,
     chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', fastCalls: 60, energyAlert: false, energyWarn: 10, energyCd: 60,
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
@@ -70,6 +70,13 @@
   if (savedCfg.theme === 'auto' && !localStorage.getItem('wsp_theme_v2')) { savedCfg.theme = 'war'; }
   try { localStorage.setItem('wsp_theme_v2', '1'); } catch (e) { /* ignore */ }
   if (!localStorage.getItem('wsp_en_v2')) { delete savedCfg.energyAlert; try { localStorage.setItem('wsp_en_v2', '1'); } catch (e) { /* ignore */ } }
+  // Sharing energy and drug cooldown is switched on once for everyone (with a notice); after that it's each member's choice
+  let shareJustOn = false;
+  if (!localStorage.getItem('wsp_share_v1')) {
+    if (!savedCfg.shareMe) shareJustOn = true;
+    savedCfg.shareMe = true;
+    try { localStorage.setItem('wsp_share_v1', '1'); localStorage.setItem('wsp_cfg', JSON.stringify(savedCfg)); } catch (e) { /* ignore */ }
+  }
   const cfg = Object.assign({}, DEFAULTS, savedCfg);
   if (typeof __wspPreset === 'object' && __wspPreset) for (const k in FACTION) if (__wspPreset[k] && !FACTION[k]) FACTION[k] = String(__wspPreset[k]);
   // Faction settings published next to the script (faction.json), for members who installed the plain loader by URL
@@ -2967,6 +2974,7 @@
   {
     const lastV = load('wsp_lastver', null);
     if (lastV && lastV !== WSP_VERSION) setTimeout(() => toast(`\u2705 JSim War Station Plus updated to v${WSP_VERSION}`), 2000);
+    if (shareJustOn) setTimeout(() => toast('\u26a1 Your energy and drug cooldown are now shared with your faction (members using this script can see them; your API key stays on your phone). Turn it off any time in Settings.'), 3500);
     save('wsp_lastver', WSP_VERSION);
   }
 
