@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.80
+// @version      5.81
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.80';
+  const WSP_VERSION = '5.81';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -788,7 +788,7 @@
       S.retalErr = '';
       updateWins(atks).catch(() => { /* keep going without it */ });
       for (const [id, r] of Object.entries(retals)) {
-        if (cfg.retalAlert) fire(`retal-${id}-${r.until}`, `🔁 Retal ${r.attacker} (hit ${r.victim}) · ${fmt(r.until - now)} left`, true);
+        if (cfg.retalAlert) fire(`retal-${id}-${r.until}`, `🔁 Retal ${r.attacker} (hit ${r.victim}) · ${fmt(r.until - now)} left`, true, id);
       }
     } catch (e) {
       S.retalErr = 'Retals need faction API access';
@@ -980,6 +980,22 @@
     const t = document.createElement('div');
     t.className = 'wsp-toast' + (urgent ? ' urgent' : '');
     t.textContent = msg;
+    if (attackId && cfg.ff) { // their estimated battle stats and FF score, when FFScouter has them
+      const f = ffCache[attackId];
+      if (f && f.bs) {
+        const st = document.createElement('span');
+        st.className = 'wsp-tstat';
+        st.textContent = `Est. ${f.bs}`;
+        if (f.ff) {
+          const [bg, fg] = ffColors(+f.ff);
+          const b = document.createElement('b');
+          b.style.cssText = `background:${bg};color:${fg}`;
+          b.textContent = `FF ${(+f.ff).toFixed(2)}`;
+          st.appendChild(b);
+        }
+        t.appendChild(st);
+      }
+    }
     if (attackId) { // a one-tap way to the attack page
       const a = document.createElement('span');
       a.className = 'wsp-tatk';
@@ -1218,6 +1234,8 @@
   .wsp-fly.guess{opacity:.75;}
   .wsp-wt{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px;}
   .wsp-wt.en{color:#ff8a8a;} .wsp-wt.us{color:#9fd8ae;} .wsp-wt.us.zero{color:var(--muted);opacity:.8;}
+  .wsp-tstat{display:block;margin-top:4px;font-size:11.5px;font-weight:600;opacity:.95;}
+  .wsp-tstat b{display:inline-block;margin-left:6px;padding:0 5px;border-radius:3px;font-size:11px;}
   #wsp-atkbadge{position:fixed;left:50%;top:86px;transform:translateX(-50%);z-index:2147483000;max-width:94vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     background:rgba(16,20,24,.94);color:#e8e8e8;border:1px solid #ffb000;border-radius:16px;padding:5px 11px;font:600 12px/1.3 -apple-system,Arial,sans-serif;box-shadow:0 3px 12px rgba(0,0,0,.5);cursor:pointer;}
   #wsp-atkbadge .t{color:#9aa3ad;font-weight:500;}
