@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.87
+// @version      5.88
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.87';
+  const WSP_VERSION = '5.88';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2997,6 +2997,15 @@
       fastTick(now);
       if (S.open) dailyTick(now);
       if (S.open && cfg.trackerUrl2 && now - (S.sharedAt || 0) > 60000) loadShared();
+    } else if (cfg.shareMe && cfg.trackerUrl2 && !document.hidden && getKey() && !S.shareBusy && now - (S.shareBarsAt || 0) > 120000) {
+      // panel closed and not checking in the background: still keep your shared energy/drug cooldown fresh (one light call every 2 min)
+      S.shareBarsAt = now; S.shareBusy = true;
+      api('user/', 'basic,bars,cooldowns').then(u => {
+        if (u.player_id) S.meId = String(u.player_id);
+        if (u.energy) { S.bars = { energy: u.energy, life: u.life }; S.barsAt = Date.now(); }
+        if (u.cooldowns) S.cd = u.cooldowns;
+        shareTick();
+      }).catch(() => {}).then(() => { S.shareBusy = false; });
     }
     if (S.open && cfg.callsUrl && now - S.callsAt > CALLS_MS) loadCalls();
     const ad = S.open && S.view === 'list' && ADDONS[S.tab];
