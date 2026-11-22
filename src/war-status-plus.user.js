@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.78
+// @version      5.79
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.78';
+  const WSP_VERSION = '5.79';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1225,6 +1225,12 @@
   #wsp-atkbadge .n{color:#ffb000;}
   #wsp-atkbadge .ff{border-radius:3px;padding:0 4px;font-size:11px;}
   #wsp-atkbadge .x{color:#9aa3ad;margin-left:4px;}
+  #wsp-brand{display:flex;align-items:center;gap:5px;padding:4px 10px 4px 8px;background:#dcd8ce;border-top:2px solid #006a4e;}
+  #wsp-brand svg{flex:none;display:block;}
+  #wsp-brand .jw{display:flex;flex-direction:column;line-height:1;}
+  #wsp-brand .jn{font-family:'Permanent Marker','Comic Sans MS',cursive;font-size:13px;color:#10251c;transform:rotate(-4deg);transform-origin:left center;}
+  #wsp-brand .js{font-family:'Black Ops One',Impact,sans-serif;font-size:7px;letter-spacing:1.5px;color:#006a4e;margin:1px 0 0 2px;}
+  #wsp-brand .jt{margin-left:auto;font:700 10px/1 Arial,sans-serif;letter-spacing:.3px;color:#10251c;opacity:.7;white-space:nowrap;}
   .wsp-l1{display:flex;align-items:center;min-width:0;}
   .wsp-l1 > a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto;}
   .wsp-l1 > *:not(a){flex-shrink:0;}
@@ -1455,6 +1461,34 @@
 
   const panel = document.createElement('div');
   panel.id = 'wsp-panel';
+  // J_Sim Scripts logo (the same mark as the other J_Sim scripts): speckled green J badge + "J_Sim / SCRIPTS"
+  const JSIM_GREEN = '#006a4e';
+  const JSIM_SPECKLE = (() => {
+    let seed = 7, d = '';
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let i = 0; i < 70; i++) {
+      const a = rnd() * Math.PI * 2, dist = 41 + rnd() * 9, r = 0.6 + rnd() * 1.6;
+      const x = 50 + Math.cos(a) * dist, y = 48 + Math.sin(a) * dist;
+      d += `M${(x - r).toFixed(2)} ${y.toFixed(2)}a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(2 * r).toFixed(2)} 0a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(-2 * r).toFixed(2)} 0`;
+    }
+    return d;
+  })();
+  const JSIM_BADGE = `<svg width="20" height="22" viewBox="0 0 100 108" aria-hidden="true">
+      <path d="${JSIM_SPECKLE}" fill="${JSIM_GREEN}" fill-opacity="0.6"></path>
+      <circle cx="50" cy="48" r="40" fill="${JSIM_GREEN}"></circle>
+      <rect x="30" y="80" width="5" height="18" rx="2.5" fill="${JSIM_GREEN}"></rect>
+      <rect x="47" y="84" width="4" height="22" rx="2" fill="${JSIM_GREEN}"></rect>
+      <rect x="66" y="78" width="5" height="13" rx="2.5" fill="${JSIM_GREEN}"></rect>
+      <text x="50" y="68" text-anchor="middle" font-family="Black Ops One, Impact, sans-serif" font-size="58" fill="#dcd8ce">J</text>
+    </svg>`;
+  try { // the logo's fonts; without them it falls back to normal fonts
+    if (!document.getElementById('jsim-fonts')) {
+      const l = document.createElement('link');
+      l.id = 'jsim-fonts'; l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Permanent+Marker&display=swap';
+      (document.head || document.documentElement).appendChild(l);
+    }
+  } catch (e) { /* fine without */ }
   panel.innerHTML = `
     <div id="wsp-head">
       <div id="wsp-title">⚔️ JSim War Station Plus</div>
@@ -1474,7 +1508,8 @@
       <div data-act="tab" data-tab="mine">Ours</div>
       <div data-act="tab" data-tab="hits" id="wsp-tab-hits">Hits</div>
     </div>
-    <div id="wsp-list"></div>`;
+    <div id="wsp-list"></div>
+    <div id="wsp-brand" title="Made by J_Sim [3659615]">${JSIM_BADGE}<span class="jw"><span class="jn">J_Sim</span><span class="js">SCRIPTS</span></span><span class="jt">War Station Plus &middot; v${WSP_VERSION}</span></div>`;
   const $ = id => panel.querySelector('#' + id);
 
   const btn = document.createElement('button');
