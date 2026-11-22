@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.82
+// @version      5.83
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.82';
+  const WSP_VERSION = '5.83';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -60,7 +60,7 @@
   const PILL_V = '<svg class="wsp-pill" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="5.6" fill="#f4f4f4" stroke="#9aa0a6" stroke-width="1"/><path d="M5.5 12h13" stroke="#b8bcc2" stroke-width=".9"/></svg>';
 
   const DEFAULTS = {
-    sound: true, vibrate: true, hospAlert: true, earlyAlert: true, landAlert: true,
+    sound: true, vibrate: true, hospAlert: true, earlyAlert: true, landAlert: true, shareMe: false,
     chainAlert: true, chainMin: 10, bg: true, popups: true, retalAlert: true, bonusAlert: true, drugAlert: true, medCap: 'auto', fastCalls: 60, energyAlert: false, energyWarn: 10, energyCd: 60,
     flight: 'std', theme: 'war', med: '', blood: '', ff: true, ffKey: '', callsUrl: '', callsPw: '', trackerUrl: '', trackerPw: '', trackerUrl2: ''
   };
@@ -436,6 +436,50 @@
     const tip = `Online ${hmShort(on)} of the ${hmShort(A.watched * 60)} watched since the war started (${pct}%). Idle another ${hmShort(idle)}.`;
     return `<span class="wsp-act${pct >= 50 ? ' hi' : pct < 10 ? ' lo' : ''}" title="${tip}">${hmShort(on)}</span>`;
   }
+  /* ---- Shared bars: members who opt in send their own energy and drug cooldown to the Ours tracker ---- */
+  S.shared = load('wsp_shared', { at: 0, m: {} });
+  S.shareSent = load('wsp_sharesent', null);
+  function shareTick() {
+    const u = cfg.trackerUrl2;
+    if (!cfg.shareMe || !u || !S.meId || !S.bars || !S.bars.energy) return;
+    const now = Math.floor(Date.now() / 1000);
+    const e = S.bars.energy.current, em = S.bars.energy.maximum, dc = (S.cd && S.cd.drug) || 0;
+    const last = S.shareSent;
+    // only when something changed (or every 10 minutes), to stay within Google's daily limits
+    const expDc = last ? Math.max(0, last.dc - (now - last.at)) : -1;
+    if (last && last.id === S.meId && last.e === e && Math.abs(expDc - dc) < 120 && now - last.at < 600) return;
+    S.shareSent = { id: S.meId, e, dc, at: now }; save('wsp_sharesent', S.shareSent);
+    getJSON(u + (u.includes('?') ? '&' : '?') + `share=1&id=${S.meId}&e=${e}&em=${em}&dc=${dc}&t=${now}`).catch(() => { S.shareSent = null; });
+  }
+  function shareOff() {
+    const u = cfg.trackerUrl2;
+    if (u && S.meId) getJSON(u + (u.includes('?') ? '&' : '?') + `share=1&off=1&id=${S.meId}`).catch(() => {});
+    S.shareSent = null; save('wsp_sharesent', null);
+  }
+  async function loadShared() {
+    const u = cfg.trackerUrl2;
+    if (!u) return;
+    S.sharedAt = Date.now();
+    try {
+      const j = await getJSON(u + (u.includes('?') ? '&' : '?') + 'shared=1&t=' + Date.now());
+      if (j && j.m) { S.shared = j; save('wsp_shared', j); S.dirty = true; }
+    } catch (e) { /* older tracker */ }
+  }
+  // { e, em, age, dc } for a member who shares, or null. Energy is as last sent; drug cooldown counts down from then.
+  function sharedBars(id) {
+    const r = S.shared && S.shared.m && S.shared.m[id];
+    if (!r) return null;
+    const now = Date.now() / 1000;
+    return { e: r.e, em: r.em, age: now - r.at, dc: Math.max(0, r.dc - (now - r.at)), at: r.at };
+  }
+  function sharedChips(id) {
+    const b = sharedBars(id);
+    if (!b) return '';
+    const old = b.age > 600 ? ` <i>(${ago(b.at)})</i>` : '';
+    return `<span class="wsp-shr" title="Shared by them ${ago(b.at)} ago: energy ${b.e}/${b.em}${b.dc > 0 ? ', drug cooldown ' + fmt(b.dc) : ', no drug cooldown'}"><b class="${b.e >= b.em ? 'full' : ''}">\u26a1${b.e}</b>${b.dc > 0 ? ` <b class="dc">${LEAF_TXT}${fmt(b.dc)}</b>` : ''}${old}</span> &middot; `;
+  }
+  const LEAF_TXT = '\u2618';
+
   function dailyCell(id) {
     const r = S.daily[id];
     if (!r || r.d == null) return `<span class="wsp-act none" title="${r ? 'Torn did not return their time played' : 'Loading time played...'}">&ndash;</span>`;
@@ -638,6 +682,7 @@
       if (u.energy) { S.bars = { energy: u.energy, life: u.life }; S.barsAt = Date.now(); }
       setChain(u);
       if (u.cooldowns) S.cd = u.cooldowns;
+      shareTick();
       loadPerks();
       if (u.attacks) S.attacks = u.attacks;
       S.uAt = Date.now();
@@ -1240,6 +1285,11 @@
   .wsp-fly.guess{opacity:.75;}
   .wsp-wt{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px;}
   .wsp-wt.en{color:#ff8a8a;} .wsp-wt.us{color:#9fd8ae;} .wsp-wt.us.zero{color:var(--muted);opacity:.8;}
+  .wsp-shr b{font-weight:700;color:var(--text);}
+  .wsp-shr b.full{color:#ffb547;}
+  .wsp-shr b.dc{color:#7dd87d;}
+  .wsp-shr i{font-style:normal;opacity:.7;}
+  .wsp-crow .n .ar.en{color:#ffd166;}
   .wsp-tstat{display:block;margin-top:4px;font-size:11.5px;font-weight:600;opacity:.95;}
   .wsp-tstat b{display:inline-block;margin-left:6px;padding:0 5px;border-radius:3px;font-size:11px;}
   #wsp-atkbadge{position:fixed;left:50%;top:86px;transform:translateX(-50%);z-index:2147483000;max-width:94vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -2439,6 +2489,7 @@
     const hit = hitMap[id] != null ? `<small class="wsp-hitmark">✓${fmtM(hitMap[id])}</small>` : '';
     const la = m.last_action || {};
     const seen = la.status && la.status !== 'Online' && la.timestamp ? ` · Last active ${ago(la.timestamp)} ago` : la.status === 'Online' ? ' · Online now' : '';
+    const shr = kind === 'enemy' ? '' : sharedChips(id);
     const rt = kind === 'enemy' && retalLeft(id) > 0
       ? `<small class="wsp-retal" data-until="${S.retals[id].until}" title="Hit ${esc(S.retals[id].victim)}">🔁${fmt(retalLeft(id))}</small>` : '';
     const action = kind === 'enemy'
@@ -2448,7 +2499,7 @@
         : `<button class="wsp-atk" data-act="attack" data-id="${id}" title="Attack one of ours (e.g. to hospitalise them)">ATK</button>`;
     return `<div class="${cls}" data-row="${id}" title="${esc(st.description || '')}">
       <span class="wsp-dot ${esc(online)}"></span>
-      <span class="wsp-name"><span class="wsp-l1">${callBtn}<a href="/profiles.php?XID=${id}" title="${esc(m.name)}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}</span><span class="wsp-meta">Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
+      <span class="wsp-name"><span class="wsp-l1">${callBtn}<a href="/profiles.php?XID=${id}" title="${esc(m.name)}">${esc(m.name)}</a>${revTag(id, kind)}${warTag(id, kind)}${rt}${caller}${hit}</span><span class="wsp-meta">${shr}Lvl ${m.level || '?'}${seen}</span>${flyTag(id, kind)}</span>
       ${ffCell(id) + (kind === 'enemy' ? '' : liveCell(id)) + dailyCell(id) + warCell(id, kind)}
       <span class="wsp-st" data-id="${id}" style="color:${s.c}">${s.h}</span>
       ${action}
@@ -2480,6 +2531,8 @@
       <label class="wsp-set"><input type="checkbox" id="wsp-c-chainAlert" ${cfg.chainAlert ? 'checked' : ''}> Chain warnings at 60s &amp; 30s from chain
         <input type="number" id="wsp-c-chainMin" inputmode="numeric" value="${cfg.chainMin}" style="width:64px"></label>
       ${ck('bg', 'Keep checking while docked (uses ~6 API calls/min)')}
+      ${ck('shareMe', 'Share my energy and drug cooldown with my faction')}
+      <div class="wsp-help" style="padding:0 0 6px 24px">Sent to your faction's Ours tracker (Google), and shown to faction members who use this script. Your API key never leaves your phone. Turn it off to stop sharing and remove your entry.</div>
       ${(() => {
         const ws = winsLoad();
         if (!ws) return '';
@@ -2535,7 +2588,8 @@
   }
 
   function saveSettings() {
-    ['popups', 'sound', 'vibrate', 'hospAlert', 'earlyAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'energyAlert', 'chainAlert', 'bg', 'ff'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
+    ['popups', 'sound', 'vibrate', 'hospAlert', 'earlyAlert', 'landAlert', 'retalAlert', 'bonusAlert', 'drugAlert', 'energyAlert', 'chainAlert', 'bg', 'ff', 'shareMe'].forEach(k => { cfg[k] = $('wsp-c-' + k).checked; });
+    if (!cfg.shareMe && S.shareSent) shareOff();
     cfg.chainMin = Math.max(1, parseInt($('wsp-c-chainMin').value, 10) || 10);
     cfg.energyWarn = Math.max(0, Math.min(120, parseInt($('wsp-c-energyWarn').value, 10) || 0));
     cfg.energyCd = Math.max(0, Math.min(600, parseInt($('wsp-c-energyCd').value, 10) || 0));
@@ -2697,6 +2751,7 @@
   }
   window.WarStatusPlus = {
     version: +WSP_VERSION,
+    sharedBars: id => sharedBars(id),
     addTab(def) {
       if (!def || !def.id || ADDONS[def.id]) return;
       ADDONS[def.id] = def;
@@ -2778,6 +2833,7 @@
       const ffCol = side === 'mine' ? `<span class="v ff" title="FFScouter estimate">${x.ff ? human(x.ff.n) : '&ndash;'}</span>` : '';
       return `<div class="wsp-crow${side === 'mine' ? ' us' : ''}${sel ? ' sel' : ''}${beat ? ' beaten' : ''}" data-act="cpick" data-side="${side}" data-id="${x.id}"${beat ? ' title="Already beaten this war by your pick"' : ''}>
         <span class="wsp-dot ${esc(online)}"></span><span class="n"><span class="nm">${beat ? '<b class="ck">&#10003;</b>' : ''}${esc(x.m.name)}</span>${(() => {
+          if (side === 'mine') { const sb = sharedBars(x.id); if (sb) return `<small class="ar en" title="Shared ${ago(sb.at)} ago">\u26a1${sb.e}/${sb.em}${sb.dc > 0 ? ' &middot; ' + LEAF_TXT + fmt(sb.dc) : ''}${sb.age > 600 ? ' (' + ago(sb.at) + ')' : ''}</small>`; }
           const pr = side === 'enemy' && callSel.mine ? pairResp(callSel.mine, x.id) : null;
           return pr ? `<small class="ar" title="Your pick hit them ${pr.n} time${pr.n > 1 ? 's' : ''} this war: ${pr.avg.toFixed(2)} respect a hit on average (chain bonus hits left out)">av ${pr.avg.toFixed(2)}R &middot; ${pr.n}x</small>` : '';
         })()}</span>
@@ -2923,6 +2979,7 @@
       checkAlerts();
       fastTick(now);
       if (S.open) dailyTick(now);
+      if (S.open && cfg.trackerUrl2 && now - (S.sharedAt || 0) > 60000) loadShared();
     }
     if (S.open && cfg.callsUrl && now - S.callsAt > CALLS_MS) loadCalls();
     const ad = S.open && S.view === 'list' && ADDONS[S.tab];
@@ -2979,6 +3036,7 @@
   .wsp-irow span.na,.wsp-irow span.zero{color:var(--faint);font-weight:500;}
   .wsp-irow span.inf{text-align:center;font-size:11px;white-space:nowrap;}
   .wsp-irow span.inf.x{background:rgba(255,176,0,.22);color:var(--text);}
+  .wsp-irow span.inf.d{background:rgba(125,216,125,.18);color:var(--text);}
   .wsp-irow span.inf.v{background:rgba(160,90,255,.28);color:var(--text);}
   .wsp-irow span.inf.o{background:#c62828;color:#fff;}
   .wsp-irow span.inf b{font-weight:800;margin-right:3px;}
@@ -3087,6 +3145,21 @@
         : `Overdosed some time before ${day(b.t)} ${clock(b.t)} TCT (from Torn's daily figures).`;
       return b;
     }
+    // Ours: the armoury log says which drug; a member's shared drug cooldown says exactly when it ends
+    function ownInf(id, r, now) {
+      let inf = influence(withArm(id, r), now);
+      const sb = W.sharedBars ? W.sharedBars(id) : null;
+      if (!sb || sb.age > 3 * 3600) return inf;
+      const drug = inf && (inf.t === 'x' || inf.t === 'v');
+      if (sb.dc <= 0) return drug ? null : inf; // cooldown over: the effect has worn off
+      if (drug) {
+        inf = Object.assign({}, inf, { left: sb.dc, end: now + sb.dc });
+        inf.text = inf.text.replace(/\s*(Estimated clear|Ends).*$/, '') + ` Clears in ${hm(sb.dc)} (from the drug cooldown they share).`;
+      } else if (!inf) {
+        inf = { t: 'd', left: sb.dc, end: now + sb.dc, fx: '', text: `They shared a drug cooldown of ${hm(sb.dc)}. The drug isn't in the armoury log (taken from their own items), so no battle stat change is applied.` };
+      }
+      return inf;
+    }
     function withArm(id, r) {
       const o = live(r), a = arm.last[id];
       if (a && a.x) o.lx = [a.x, a.x];
@@ -3116,7 +3189,7 @@
 
     // Average cooldowns from Torn's wiki: Xanax 6-8h, Vicodin 4-6h, overdose adds ~24-25h
     const COOL = { x: 7 * 3600, v: 5 * 3600, o: 24.5 * 3600 };
-    const NAME = { x: 'Xan', v: 'Vic', o: 'OD' };
+    const NAME = { x: 'Xan', v: 'Vic', o: 'OD', d: 'Drug' };
     const LONG = { x: 'Xanax', v: 'Vicodin', o: 'an overdose' };
     function influence(r, now) {
       const c = [];
@@ -3147,10 +3220,10 @@
       const mem = (d && d.members) || {};
       const own = which === 'own';
       const now = Date.now() / 1000, map = {};
-      const ids = new Set(Object.keys(mem).concat(own ? Object.keys(arm.last) : []));
+      const ids = new Set(Object.keys(mem).concat(own ? Object.keys(arm.last).concat(Object.keys((W.state.shared && W.state.shared.m) || {})) : []));
       for (const id of ids) {
         const r = mem[id] || {};
-        const inf = influence(own ? withArm(id, r) : live(r), now);
+        const inf = own ? ownInf(id, r, now) : influence(live(r), now);
         if (inf) map[id] = { t: inf.t, fx: inf.fx };
       }
       W.setInfluence(map, which === 'own' ? 'mine' : 'enemy');
@@ -3218,7 +3291,7 @@
           x: src ? src.x : null,
           v: src ? (src.v != null ? src.v : null) : null,
           o: src ? src.o : null,
-          inf: influence(side === 'own' ? withArm(id, r) : live(r), now),
+          inf: side === 'own' ? ownInf(id, r, now) : influence(live(r), now),
           lod: side === 'own' ? null : lastOD(r)
         };
       });
@@ -3267,7 +3340,7 @@
         : 'War: everything since the war started.') +
         ' Xan, Vic and OD counts come from Torn\'s drug totals, which Torn only updates once a day (around midnight TCT), so today\'s use shows tomorrow. OD tags in hospital are live.' +
         (side === 'own'
-          ? ' Under influence is live for Xanax and Vicodin taken from the faction armoury' + (arm.err ? ` <span style="color:#ff5a5a">(armoury log unavailable: ${W.esc(arm.err)} - your key needs faction access)</span>` : '') + ', and counts down using Torn\'s average cooldowns (Xanax 7h, Vicodin 5h, overdose about 24h).'
+          ? ' Under influence is live for Xanax and Vicodin taken from the faction armoury' + (arm.err ? ` <span style="color:#ff5a5a">(armoury log unavailable: ${W.esc(arm.err)} - your key needs faction access)</span>` : '') + ', and counts down using Torn\'s average cooldowns (Xanax 7h, Vicodin 5h, overdose about 24h). Members who share their drug cooldown (Settings) get the exact end time, and a Drug timer even for drugs from their own items.'
           : ' Last OD is exact when the overdose was seen in hospital; ~ means it came from Torn\'s daily figures, so it happened some time before then. An overdose still running counts down (about 24h).') +
         ' Tap and hold for the details.</div>';
       return html;

@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v3.3 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.4 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -140,6 +140,27 @@ function isFlying(st) {
   return /from\s+torn\s+to|travel+ing\s+to|returning\s+to\s+torn/i.test(st.description || '');
 }
 
+/* ------------------------- shared bars ------------------------- */
+// Members who switch on "Share my energy and drug cooldown" in War Status+ send their own figures here
+// (their API key never leaves their phone). Each member has their own entry, so sends never overwrite each other.
+function shareIn(p) {
+  const id = String(p.id || '').replace(/\D/g, '');
+  if (!id) return { error: 'no id' };
+  if (p.off) { PropertiesService.getScriptProperties().deleteProperty('sh_' + id); return { ok: true, removed: true }; }
+  const num = v => Math.max(0, Math.min(1e6, Math.round(Number(v) || 0)));
+  const rec = { e: num(p.e), em: num(p.em), dc: num(p.dc), at: num(p.t) || Math.floor(Date.now() / 1000) };
+  PropertiesService.getScriptProperties().setProperty('sh_' + id, JSON.stringify(rec));
+  return { ok: true };
+}
+function sharedReport() {
+  const all = PropertiesService.getScriptProperties().getProperties(), now = Math.floor(Date.now() / 1000), m = {};
+  for (const k in all) {
+    if (k.indexOf('sh_') !== 0) continue;
+    try { const r = JSON.parse(all[k]); if (now - r.at < 12 * 3600) m[k.slice(3)] = r; } catch (err) { /* skip */ }
+  }
+  return { at: now, m };
+}
+
 /* ------------------------- war activity ------------------------- */
 // Per war: m[id] = [minutes Online, minutes Idle] since the war started; mins = minutes watched.
 // Starts again with each new war.
@@ -278,6 +299,8 @@ function drugFigures(ps) {
 // War Status+ asks for data here
 function doGet(e) {
   const P = PropertiesService.getScriptProperties();
+  if (e.parameter.share) return json(shareIn(e.parameter));
+  if (e.parameter.shared) return json(sharedReport());
   if (e.parameter.intel) return json(intelReport());
   if (e.parameter.act) return json(activityReport());
   if (e.parameter.probe) { // e.g. ...exec?probe=1234567 : the same player's totals from every kind of request
