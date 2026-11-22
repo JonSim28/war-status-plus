@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.77
+// @version      5.78
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.77';
+  const WSP_VERSION = '5.78';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -796,16 +796,24 @@
     }
   }
   /* ---------- Who has beaten whom this war (for the Call tab) ---------- */
+  const CHAIN_BONUS = new Set([10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]);
+  // Average respect our member has earned per hit on this enemy this war: { n, avg } or null
+  function pairResp(ourId, enId) {
+    const ws = winsLoad();
+    const x = ws && ws.pr && ws.pr[ourId] && ws.pr[ourId][enId];
+    return x && x[0] ? { n: x[0], avg: x[1] / x[0] } : null;
+  }
   // Kept per war on this device: our attacker id -> { enemy id: 1 }
   let winsState = null;
   function winsLoad() {
     if (!(S.war && S.war.war && S.war.war.start && S.mine && S.enemy)) return null;
-    const key = 'wsp_wins7_' + S.war.war.start + '_' + S.enemy.ID;
+    const key = 'wsp_wins8_' + S.war.war.start + '_' + S.enemy.ID;
     if (!winsState || winsState.key !== key) {
       winsState = load(key, null) || { key, upTo: 0, backTo: null, w: {} };
       winsState.n = winsState.n || {};   // our member id -> successful war hits
       winsState.by = winsState.by || {}; // enemy id -> successful hits on our members
       winsState.seen = winsState.seen || {};
+      winsState.pr = winsState.pr || {}; // our id -> { enemy id: [hits, respect] } (chain bonus hits left out)
     }
     return winsState;
   }
@@ -841,6 +849,11 @@
       if (ours) ws.cnt.o++; else ws.cnt.i++;
       if (ours) {
         (ws.w[a.attacker_id] = ws.w[a.attacker_id] || {})[a.defender_id] = 1;
+        if (!CHAIN_BONUS.has(+a.chain)) { // a bonus hit's respect would swamp the average
+          const p = (ws.pr[a.attacker_id] = ws.pr[a.attacker_id] || {});
+          const x = (p[a.defender_id] = p[a.defender_id] || [0, 0]);
+          x[0]++; x[1] = Math.round((x[1] + rs) * 100) / 100;
+        }
         ws.n[a.attacker_id] = (ws.n[a.attacker_id] || 0) + 1;
         ws.nr = ws.nr || {}; ws.nr[a.attacker_id] = (ws.nr[a.attacker_id] || 0) + rs;
       } else {
@@ -1254,6 +1267,9 @@
   .wsp-crow .v.even,.wsp-cbar .ratio.even{background:rgba(255,176,0,.35);}
   .wsp-crow .v.hard,.wsp-cbar .ratio.hard{background:rgba(229,72,77,.45);}
   .wsp-crow .s{font-size:10.5px;font-weight:700;text-align:right;white-space:nowrap;overflow:hidden;letter-spacing:-.2px;}
+  .wsp-crow .n{display:flex;flex-direction:column;min-width:0;}
+  .wsp-crow .n .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .wsp-crow .n .ar{color:#7dffa8;font-weight:700;font-size:9.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wsp-crow.beaten{background:rgba(31,157,85,.18) !important;box-shadow:inset 3px 0 0 #1f9d55;}
   .wsp-crow .ck{color:#3fbf6f;margin-right:3px;}
   .wsp-crow.sel{background:var(--accentSoft) !important;box-shadow:inset 3px 0 0 var(--accent);}
@@ -2701,7 +2717,10 @@
       const beat = side === 'enemy' && callSel.mine && hasBeaten(callSel.mine, x.id);
       const ffCol = side === 'mine' ? `<span class="v ff" title="FFScouter estimate">${x.ff ? human(x.ff.n) : '&ndash;'}</span>` : '';
       return `<div class="wsp-crow${side === 'mine' ? ' us' : ''}${sel ? ' sel' : ''}${beat ? ' beaten' : ''}" data-act="cpick" data-side="${side}" data-id="${x.id}"${beat ? ' title="Already beaten this war by your pick"' : ''}>
-        <span class="wsp-dot ${esc(online)}"></span><span class="n">${beat ? '<b class="ck">&#10003;</b>' : ''}${esc(x.m.name)}</span>
+        <span class="wsp-dot ${esc(online)}"></span><span class="n"><span class="nm">${beat ? '<b class="ck">&#10003;</b>' : ''}${esc(x.m.name)}</span>${(() => {
+          const pr = side === 'enemy' && callSel.mine ? pairResp(callSel.mine, x.id) : null;
+          return pr ? `<small class="ar" title="Your pick hit them ${pr.n} time${pr.n > 1 ? 's' : ''} this war: ${pr.avg.toFixed(2)} respect a hit on average (chain bonus hits left out)">av ${pr.avg.toFixed(2)}R &middot; ${pr.n}x</small>` : '';
+        })()}</span>
         ${ffCol}<span class="v${vcls}${x.ls && x.ls.d ? ' live' : ''}" title="${x.ls ? (side === 'mine' ? 'Live: FF adjusted for a Xanax/Vicodin from the faction armoury' + (x.ls.d ? ' - on ' + x.ls.d.name + ' now' : ' - nothing running, same as FF') : 'FFScouter estimate') : 'No estimate'}">${x.ls ? human(x.ls.n) : '&ndash;'}</span>
         <span class="s" style="color:${x.st.c}">${x.st.h}</span></div>`;
     }).join('') || '<div class="wsp-msg">Loading...</div>';
@@ -2715,7 +2734,8 @@
       const r = sa && sb ? sb.n / sa.n : null;
       bar = `<div class="pair"><b>${esc(a.name)}</b> &rarr; <b>${esc(b.name)}</b>` +
         (r != null ? ` <span class="ratio ${ratioClass(r)}">${esc(b.name)} is about ${Math.round(r * 100)}% of ${esc(a.name)}'s stats</span>` : '') +
-        (hasBeaten(callSel.mine, callSel.enemy) ? ` <span class="ratio easy">&#10003; already beaten this war</span>` : '') + '</div>' +
+        (hasBeaten(callSel.mine, callSel.enemy) ? ` <span class="ratio easy">&#10003; already beaten this war</span>` : '') +
+        (() => { const pr = pairResp(callSel.mine, callSel.enemy); return pr ? ` <span class="ratio easy">av. ${pr.avg.toFixed(2)}R over ${pr.n} hit${pr.n > 1 ? 's' : ''}</span>` : ''; })() + '</div>' +
         '<div class="btns"><button data-act="ccopy" class="go">&#128227; Copy call</button><button data-act="cclear">Clear</button></div>';
     } else {
       bar = `<div class="pair hint">${a ? '<b>' + esc(a.name) + '</b> &rarr; now tap a target on the right' : b ? 'Now tap one of ours on the left for <b>' + esc(b.name) + '</b>' : 'Tap one of ours, then one of theirs'}</div>`;
@@ -2725,7 +2745,7 @@
         <div class="col"><div class="h">${esc(S.mine.name)}</div><div class="wsp-crow us hd"><span></span><span></span><span>FF</span><span>Live</span><span></span></div>${callColumn('mine')}</div>
         <div class="col"><div class="h">${esc(S.enemy.name)}</div><div class="wsp-crow hd"><span></span><span></span><span>FF</span><span></span></div>${callColumn('enemy')}</div>
       </div>
-      <div class="wsp-help" style="padding-top:8px">Numbers are FFScouter battle stat estimates. For ours, Live adjusts FF for a Xanax (-35%) or Vicodin (+25%) taken from the faction armoury that is still running (outlined). Once one of ours is picked, targets turn green (easier), amber (even) or red (harder) for them and are re-ordered: Okay and in the same place first, green to red, strongest first within each colour, and anyone they have already beaten this war gets a green row with a tick (needs faction API access). Copy call puts the call on your clipboard; paste it in faction chat and send.</div>`;
+      <div class="wsp-help" style="padding-top:8px">Numbers are FFScouter battle stat estimates. For ours, Live adjusts FF for a Xanax (-35%) or Vicodin (+25%) taken from the faction armoury that is still running (outlined). Once one of ours is picked, targets turn green (easier), amber (even) or red (harder) for them and are re-ordered: Okay and in the same place first, green to red, strongest first within each colour, and anyone they have already beaten this war gets a green row with a tick and their average respect per hit on that target, e.g. av. 2.14R (chain bonus hits left out; needs faction API access). Copy call puts the call on your clipboard; paste it in faction chat and send.</div>`;
   }
   function copyText(t, done) {
     const fallback = () => {
