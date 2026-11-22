@@ -1,10 +1,16 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.90
+// @version      5.91
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      api.torn.com
+// @connect      ffscouter.com
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
+// @connect      raw.githubusercontent.com
+// @connect      *
 // @run-at       document-end
 // ==/UserScript==
 
@@ -38,7 +44,7 @@
     trackerUrl2: 'https://script.google.com/macros/s/AKfycbyPTSFRfxwQ3TaT3K9ZS5O8YrhzOk0RjpfS5T_0WpnzEFlj6rpG5mdfmhx6a9-lTrjC/exec'
   };
 
-  const WSP_VERSION = '5.90';
+  const WSP_VERSION = '5.91';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -98,18 +104,28 @@
     return k ? k.trim() : null;
   }
 
-  // fetch, falling back to TornPDA's native HTTP (no CORS limits) if fetch is blocked
-  async function getJSON(url, opts) {
+  // On a computer, Tampermonkey/Violentmonkey's own request function (handed over by the loader) isn't limited by Torn's page rules
+  const GMX = typeof __wspGM === 'function' ? __wspGM : (typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest : null);
+  function gmText(url, opts) {
+    return new Promise((ok, no) => GMX({
+      method: (opts && opts.method) || 'GET', url, headers: (opts && opts.headers) || {}, data: opts && opts.body,
+      onload: r => ok(r.responseText), onerror: () => no(new Error('request failed')), ontimeout: () => no(new Error('timed out'))
+    }));
+  }
+  // Text from any address: fetch, then TornPDA's native HTTP, then the userscript manager's
+  async function getText(url, opts) {
     try {
-      const r = await fetch(url, opts);
-      return await r.json();
+      const r = await fetch(url, Object.assign({ cache: 'no-store' }, opts || {}));
+      return await r.text();
     } catch (e) {
       const post = opts && opts.method === 'POST';
-      if (!post && typeof PDA_httpGet === 'function') return JSON.parse((await PDA_httpGet(url)).responseText);
-      if (post && typeof PDA_httpPost === 'function') return JSON.parse((await PDA_httpPost(url, opts.headers || {}, opts.body)).responseText);
+      if (!post && typeof PDA_httpGet === 'function') return String((await PDA_httpGet(url)).responseText || '');
+      if (post && typeof PDA_httpPost === 'function') return String((await PDA_httpPost(url, opts.headers || {}, opts.body)).responseText || '');
+      if (GMX) return gmText(url, opts);
       throw e;
     }
   }
+  async function getJSON(url, opts) { return JSON.parse(await getText(url, opts)); }
 
   // Medical cooldown limit: 6h, raised by faction perks (Fortitude, up to 9h). Read from your perks every 6 hours.
   const MED_BASE = 6 * 3600;
@@ -1846,7 +1862,7 @@
     const t = document.createElement('div');
     t.className = 'wsp-toast';
     t.dataset.copy = '1';
-    t.textContent = msg + ` Tap this message to copy the ${what || 'item\'s'} code, then paste it to Claude.`;
+    t.textContent = msg + ` Tap this message to copy the ${what || 'item\'s'} code, then send it to J_Sim.`;
     toasts.appendChild(t);
     setTimeout(() => t.remove(), 15000);
   }
@@ -2147,7 +2163,7 @@
       c.querySelectorAll('*').forEach(x => { ['style', 'tabindex', 'data-is-tooltip-opened', 'srcset'].forEach(a => x.removeAttribute(a)); });
       const html = c.outerHTML.replace(/\s+/g, ' ').replace(/[^\x20-\x7e]/g, '?').slice(0, cogTry.limit || 5000);
       if (cogTry.el && cogTry.el.removeAttribute) cogTry.el.removeAttribute('data-wsp-tapped');
-      copyText('War Status+ ' + location.hash + ' ' + html, ok => toast(ok ? '\u2705 Copied - paste it to Claude' : 'Copy blocked - send a screenshot instead'));
+      copyText('War Status+ ' + location.hash + ' ' + html, ok => toast(ok ? '\u2705 Copied - send it to J_Sim' : 'Copy blocked - send a screenshot instead'));
     },
     '#wsp-medgo': () => medStep(want),
     '#wsp-travgo': () => tripStep(),
@@ -2919,24 +2935,14 @@
     const bust = 't=' + Date.now();
     try {
       let v = '';
-      try {
-        const r = await fetch(base + 'version.txt?' + bust, { cache: 'no-store' });
-        v = (await r.text()).trim();
-      } catch (e) {
-        if (typeof PDA_httpGet === 'function') v = String((await PDA_httpGet(base + 'version.txt?' + bust)).responseText || '').trim();
-      }
+      try { v = (await getText(base + 'version.txt?' + bust)).trim(); } catch (e) { /* offline */ }
       if (!/^\d+(\.\d+)*$/.test(v)) throw new Error('no version file');
       const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; };
       const newer = cmp(v, WSP_VERSION) > 0;
       if (!newer) { if (manual) toast(`\u2705 You're on the latest version (v${WSP_VERSION})`); return; }
       if (updReady === v) { if (manual) location.reload(); return; }
       let code = '';
-      try {
-        const r = await fetch(FROM_LOADER + (FROM_LOADER.includes('?') ? '&' : '?') + bust, { cache: 'no-store' });
-        code = await r.text();
-      } catch (e) {
-        if (typeof PDA_httpGet === 'function') code = String((await PDA_httpGet(FROM_LOADER + '?' + bust)).responseText || '');
-      }
+      try { code = await getText(FROM_LOADER + (FROM_LOADER.includes('?') ? '&' : '?') + bust); } catch (e) { /* offline */ }
       // GitHub's cache can lag behind version.txt (especially after quick back-to-back updates):
       // take whatever copy is newer than the one running, even if it isn't the very latest yet
       const cv = ((code.match(/@version\s+([\d.]+)/) || [])[1]) || '';

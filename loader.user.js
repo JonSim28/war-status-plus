@@ -1,10 +1,16 @@
 // ==UserScript==
 // @name         JSim War Station Plus (auto-updating)
 // @namespace    torn-war-status-plus
-// @version      1.1
+// @version      1.2
 // @description  Loads the latest JSim War Station Plus from your faction's script address, so updates arrive by themselves
 // @match        https://www.torn.com/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      raw.githubusercontent.com
+// @connect      api.torn.com
+// @connect      ffscouter.com
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
+// @connect      *
 // @run-at       document-end
 // ==/UserScript==
 
@@ -23,18 +29,25 @@
   var KEY = '###PDA-APIKEY###';
   var ran = false, cached = null, errs = [];
   var NAME = 'JSim War Station Plus';
+  // On a computer (Tampermonkey/Violentmonkey) Torn's page rules block outside downloads; the manager's own request function isn't limited
+  var GMX = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest : null;
+  function gmGet(u) {
+    return new Promise(function (ok, no) {
+      GMX({ method: 'GET', url: u, onload: function (r) { ok(r.responseText); }, onerror: function () { no(new Error('request failed')); }, ontimeout: function () { no(new Error('timed out')); } });
+    });
+  }
   function note(m) { errs.push(m); try { console.warn(NAME + ' loader:', m); } catch (e) { /* ignore */ } }
   try { cached = localStorage.getItem('wsp_code'); } catch (e) { /* storage blocked */ }
 
   function started() { return !!window.WarStatusPlus; }
-  function viaGlobals() { window.__wspPdaKey = KEY; window.__wspPreset = PRESET; window.__wspFrom = SRC; }
+  function viaGlobals() { window.__wspPdaKey = KEY; window.__wspPreset = PRESET; window.__wspFrom = SRC; window.__wspGM = GMX; }
   function clearGlobals() { window.__wspPdaKey = undefined; }
   function run(code) {
     if (ran || !code) return;
     ran = true;
     // 1) plain eval
     try {
-      new Function('__wspPdaKey', '__wspPreset', '__wspFrom', code)(KEY, PRESET, SRC);
+      new Function('__wspPdaKey', '__wspPreset', '__wspFrom', '__wspGM', code)(KEY, PRESET, SRC, GMX);
       return;
     } catch (e) {
       var why = String(e && (e.name + ': ' + e.message));
@@ -65,7 +78,7 @@
     if (!errs.length) note(cached ? 'cached copy did not start' : 'still waiting for the download');
     var d = document.createElement('div');
     d.style.cssText = 'position:fixed;left:8px;right:8px;bottom:80px;z-index:2147483647;background:#7a1010;color:#fff;font:13px/1.4 -apple-system,Arial,sans-serif;padding:10px 12px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.5)';
-    d.textContent = NAME + ' could not start: ' + errs.join(' | ') + '. Tap to close, and send Claude a screenshot.';
+    d.textContent = NAME + ' could not start: ' + errs.join(' | ') + '. Tap to close, and send J_Sim a screenshot.';
     d.addEventListener('click', function () { d.remove(); });
     (document.body || document.documentElement).appendChild(d);
   }, 12000);
@@ -85,6 +98,7 @@
     try { localStorage.setItem('wsp_code_chk', String(Date.now())); } catch (e) { /* ignore */ }
     var url = SRC + (SRC.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now();
     var viaPda = function (e) {
+      if (GMX) { gmGet(url).then(got, function (e3) { note('download failed (' + (e3 && e3.message || e3) + ')'); }); return; }
       note('download failed (' + (e && e.message || e) + ')');
       if (typeof PDA_httpGet !== 'function') return;
       PDA_httpGet(url).then(function (r) { got(r && typeof r === 'object' ? (r.responseText || r.body || r.data || '') : r); }, function (e2) { note('PDA download failed (' + e2 + ')'); });
