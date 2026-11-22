@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.88
+// @version      5.89
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -31,13 +31,14 @@
   /* ===== FACTION SETUP — fill these in once, then share this file with your faction =====
    * Members get these automatically. Anyone can still change them in ⚙️ Settings. */
   const FACTION = {
-    trackerUrl: '',   // your tracker web app URL (ends in /exec)
+    // New World Alliance trackers (also published in faction.json), so every install has them
+    trackerUrl: 'https://script.google.com/macros/s/AKfycbwea7Ic_GW3CJ2XTVmVf3aazA6DZLVpZOYFLuAsKo6d5hCGw-NA10LdRR9XukXpp8sS/exec',
     callsUrl: '',     // optional: target-calling server URL
     callsPw: '',      // optional: target-calling password
-    trackerUrl2: ''   // optional: second tracker watching your own faction
+    trackerUrl2: 'https://script.google.com/macros/s/AKfycbyPTSFRfxwQ3TaT3K9ZS5O8YrhzOk0RjpfS5T_0WpnzEFlj6rpG5mdfmhx6a9-lTrjC/exec'
   };
 
-  const WSP_VERSION = '5.88';
+  const WSP_VERSION = '5.89';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -2957,15 +2958,18 @@
       if (manual) toast('Could not check for updates right now');
     }
   }
-  // refresh faction.json (used from the next page load) every few hours
-  if (FROM_LOADER) setTimeout(async () => {
+  // refresh faction.json every few hours (any install, loader or pasted) and fill blank settings straight away
+  setTimeout(async () => {
     try {
       const old = JSON.parse(localStorage.getItem('wsp_facjson') || 'null');
       if (old && Date.now() - old.at < 3 * 3600e3) return;
-      const r = await fetch(FROM_LOADER.replace(/[^/]*$/, '') + 'faction.json?t=' + Date.now(), { cache: 'no-store' });
-      if (!r.ok) return;
-      const v = await r.json();
-      if (v && typeof v === 'object') localStorage.setItem('wsp_facjson', JSON.stringify({ at: Date.now(), v }));
+      const base = FROM_LOADER ? FROM_LOADER.replace(/[^/]*$/, '') : 'https://raw.githubusercontent.com/JonSim28/war-status-plus/main/';
+      const v = await getJSON(base + 'faction.json?t=' + Date.now());
+      if (!v || typeof v !== 'object') return;
+      localStorage.setItem('wsp_facjson', JSON.stringify({ at: Date.now(), v }));
+      let changed = false;
+      for (const k in FACTION) if (v[k] && !cfg[k]) { cfg[k] = String(v[k]); changed = true; }
+      if (changed) S.dirty = true;
     } catch (e) { /* none published */ }
   }, 8000);
   if (FROM_LOADER) { setTimeout(checkUpdate, 15000); setInterval(() => { if (!document.hidden) checkUpdate(); }, 120000); }
