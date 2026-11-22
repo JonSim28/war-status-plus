@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.85
+// @version      5.86
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.85';
+  const WSP_VERSION = '5.86';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -449,7 +449,7 @@
     const expDc = last ? Math.max(0, last.dc - (now - last.at)) : -1;
     if (last && last.id === S.meId && last.e === e && Math.abs(expDc - dc) < 120 && now - last.at < 600) return;
     S.shareSent = { id: S.meId, e, dc, at: now }; save('wsp_sharesent', S.shareSent);
-    getJSON(u + (u.includes('?') ? '&' : '?') + `share=1&id=${S.meId}&e=${e}&em=${em}&dc=${dc}&t=${now}`)
+    getJSON(u + (u.includes('?') ? '&' : '?') + `share=1&id=${S.meId}&e=${e}&em=${em}&dc=${dc}`)
       .then(j => {
         if (j && j.ok) { S.shareErr = ''; S.shareOkAt = Date.now(); setTimeout(loadShared, 1500); return; }
         S.shareErr = 'the Ours tracker did not accept it - it needs tracker v3.4 (New version deployed)';

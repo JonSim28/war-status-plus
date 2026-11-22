@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v3.4 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.5 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -148,7 +148,7 @@ function shareIn(p) {
   if (!id) return { error: 'no id' };
   if (p.off) { PropertiesService.getScriptProperties().deleteProperty('sh_' + id); return { ok: true, removed: true }; }
   const num = v => Math.max(0, Math.min(1e6, Math.round(Number(v) || 0)));
-  const rec = { e: num(p.e), em: num(p.em), dc: num(p.dc), at: num(p.t) || Math.floor(Date.now() / 1000) };
+  const rec = { e: num(p.e), em: num(p.em), dc: num(p.dc), at: Math.floor(Date.now() / 1000) }; // the tracker's own clock
   PropertiesService.getScriptProperties().setProperty('sh_' + id, JSON.stringify(rec));
   return { ok: true };
 }
