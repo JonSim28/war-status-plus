@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.89
+// @version      5.90
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -38,7 +38,7 @@
     trackerUrl2: 'https://script.google.com/macros/s/AKfycbyPTSFRfxwQ3TaT3K9ZS5O8YrhzOk0RjpfS5T_0WpnzEFlj6rpG5mdfmhx6a9-lTrjC/exec'
   };
 
-  const WSP_VERSION = '5.89';
+  const WSP_VERSION = '5.90';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -493,7 +493,7 @@
     const old = b.age > 600 ? ` <i>(${ago(b.at)})</i>` : '';
     return `<span class="wsp-shr" title="Shared by them ${ago(b.at)} ago: energy ${b.e}/${b.em}${b.dc > 0 ? ', drug cooldown ' + fmt(b.dc) : ', no drug cooldown'}"><b class="${b.e >= b.em ? 'full' : ''}">\u26a1${b.e}</b>${b.dc > 0 ? ` <b class="dc">${LEAF_TXT}${fmt(b.dc)}</b>` : ''}${old}</span> &middot; `;
   }
-  const LEAF_TXT = '\u2618';
+  const LEAF_TXT = '\u{1F48A}'; // pill: drug cooldown
 
   function dailyCell(id) {
     const r = S.daily[id];
