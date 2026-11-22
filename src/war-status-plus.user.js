@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.81
+// @version      5.82
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.81';
+  const WSP_VERSION = '5.82';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -1003,6 +1003,11 @@
       a.textContent = 'ATTACK';
       t.appendChild(a);
     }
+    const x = document.createElement('span'); // close without opening anything
+    x.className = 'wsp-tx';
+    x.textContent = '\u2715';
+    x.title = 'Close';
+    t.appendChild(x);
     toasts.appendChild(t);
     while (toasts.children.length > 4) toasts.firstChild.remove();
     setTimeout(() => t.remove(), attackId ? 15000 : 7000);
@@ -1198,8 +1203,9 @@
   .wsp-watch{color:#9fd3ff;cursor:pointer;font-weight:700;}
   .wsp-tatk{display:inline-block;margin-left:10px;padding:5px 10px;border-radius:4px;background:#c62828;color:#fff;font-weight:800;letter-spacing:.8px;font-size:12px;vertical-align:middle;cursor:pointer;}
   .wsp-toast{background:var(--head);color:var(--headText);padding:9px 12px;border-radius:10px;font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-    box-shadow:0 4px 14px var(--shadow);cursor:pointer;border-left:4px solid var(--accent);}
+    box-shadow:0 4px 14px var(--shadow);cursor:pointer;border-left:4px solid var(--accent);position:relative;padding-right:34px !important;}
   .wsp-toast.urgent{border-left-color:var(--hot);}
+  .wsp-tx{position:absolute;top:0;right:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font:700 15px/1 Arial,sans-serif;color:currentColor;opacity:.75;cursor:pointer;}
 
   #wsp-panel{position:fixed;left:0;width:min(460px,97vw);bottom:9vh;max-height:78vh;display:none;flex-direction:column;background:var(--bg);color:var(--text);
     border-radius:0 12px 12px 0;box-shadow:4px 6px 28px var(--shadow);z-index:2147483001;
@@ -2055,6 +2061,7 @@
 
   // Tab / dock / refresh / toast taps are caught at document level so the page can't swallow them
   const ACTIONS = {
+    '.wsp-tx': el => { const t = el.closest('.wsp-toast'); if (t) t.remove(); },
     '.wsp-tatk': el => {
       window.open(`https://www.torn.com/page.php?sid=attack&user2ID=${el.dataset.id}`, '_blank');
       const t = el.closest('.wsp-toast');
