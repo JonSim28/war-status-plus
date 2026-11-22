@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JSim War Station Plus
 // @namespace    torn-war-status-plus
-// @version      5.84
+// @version      5.85
 // @description  ⚔️ war pop-out with Intel: statuses, hospital timers, travel ETAs, alerts, chain watcher, bars, FFScouter, hit log, target calling
 // @match        https://www.torn.com/*
 // @grant        none
@@ -37,7 +37,7 @@
     trackerUrl2: ''   // optional: second tracker watching your own faction
   };
 
-  const WSP_VERSION = '5.84';
+  const WSP_VERSION = '5.85';
   // TornPDA swaps this placeholder for your saved API key automatically. When the auto-updating loader runs this
   // code, PDA only swaps it in the loader, so the loader hands the key over as __wspPdaKey.
   /* global __wspPdaKey, __wspPreset, __wspFrom */
@@ -451,7 +451,7 @@
     S.shareSent = { id: S.meId, e, dc, at: now }; save('wsp_sharesent', S.shareSent);
     getJSON(u + (u.includes('?') ? '&' : '?') + `share=1&id=${S.meId}&e=${e}&em=${em}&dc=${dc}&t=${now}`)
       .then(j => {
-        if (j && j.ok) { S.shareErr = ''; S.shareOkAt = Date.now(); return; }
+        if (j && j.ok) { S.shareErr = ''; S.shareOkAt = Date.now(); setTimeout(loadShared, 1500); return; }
         S.shareErr = 'the Ours tracker did not accept it - it needs tracker v3.4 (New version deployed)';
         S.shareSent = null; save('wsp_sharesent', null); // try again next refresh
       })
@@ -468,8 +468,9 @@
     S.sharedAt = Date.now();
     try {
       const j = await getJSON(u + (u.includes('?') ? '&' : '?') + 'shared=1&t=' + Date.now());
-      if (j && j.m) { S.shared = j; save('wsp_shared', j); S.dirty = true; }
-    } catch (e) { /* older tracker */ }
+      if (j && j.m) { S.shared = j; S.sharedErr = ''; S.sharedOkAt = Date.now(); S.dirty = true; try { save('wsp_shared', j); } catch (e) { /* full */ } }
+      else S.sharedErr = 'unexpected reply: ' + JSON.stringify(j).slice(0, 80);
+    } catch (e) { S.sharedErr = String(e && e.message || e); }
   }
   // { e, em, age, dc } for a member who shares, or null. Energy is as last sent; drug cooldown counts down from then.
   function sharedBars(id) {
@@ -2538,7 +2539,9 @@
         <input type="number" id="wsp-c-chainMin" inputmode="numeric" value="${cfg.chainMin}" style="width:64px"></label>
       ${ck('bg', 'Keep checking while docked (uses ~6 API calls/min)')}
       ${ck('shareMe', 'Share my energy and drug cooldown with my faction')}
-      <div class="wsp-help" style="padding:0 0 6px 24px">Sent to your faction's Ours tracker (Google), and shown to faction members who use this script. Your API key never leaves your phone. Turn it off to stop sharing and remove your entry.${cfg.shareMe ? '<br><b>Status:</b> ' + (!cfg.trackerUrl2 ? '<span style="color:#ff5a5a">no Ours tracker link set</span>' : S.shareErr ? `<span style="color:#ff5a5a">${esc(S.shareErr)}</span>` : S.shareOkAt ? `sent ${ago(S.shareOkAt / 1000)} ago` : 'sends at the next refresh') : ''}</div>
+      <div class="wsp-help" style="padding:0 0 6px 24px">Sent to your faction's Ours tracker (Google), and shown to faction members who use this script. Your API key never leaves your phone. Turn it off to stop sharing and remove your entry.${cfg.shareMe ? '<br><b>Status:</b> ' + (!cfg.trackerUrl2 ? '<span style="color:#ff5a5a">no Ours tracker link set</span>' : S.shareErr ? `<span style="color:#ff5a5a">${esc(S.shareErr)}</span>` : S.shareOkAt ? `sent ${ago(S.shareOkAt / 1000)} ago` : 'sends at the next refresh') +
+        ' &middot; reading: ' + (S.sharedErr ? `<span style="color:#ff5a5a">${esc(S.sharedErr)}</span>` : S.sharedOkAt ? `${Object.keys((S.shared && S.shared.m) || {}).length} sharing, read ${ago(S.sharedOkAt / 1000)} ago` : 'not read yet') +
+        (S.meId && S.shared && S.shared.m && S.shared.m[S.meId] ? ' (you are in the list)' : '') : ''}</div>
       ${(() => {
         const ws = winsLoad();
         if (!ws) return '';
