@@ -1,5 +1,5 @@
 /**
- * War Status+ Tracker v3.5 - runs on Google's servers every minute, even when TornPDA is closed.
+ * War Status+ Tracker v3.6 - runs on Google's servers every minute, even when TornPDA is closed.
  *
  * 1. Records when players take off and land, so War Status+ can show accurate flight ETAs
  *    and work out each player's travel method (standard, airstrip, WLT jet or business class).
@@ -67,6 +67,7 @@ function run() {
     }
   }
   if (own) {
+    pollKeys(now);
     if (war) { activity(mine, war, now); watchWar(war, mine, now); }
   } else {
     if (!eid) eid = ENEMY_FACTION_ID;
@@ -159,6 +160,130 @@ function sharedReport() {
     try { const r = JSON.parse(all[k]); if (now - r.at < 12 * 3600) m[k.slice(3)] = r; } catch (err) { /* skip */ }
   }
   return { at: now, m };
+}
+
+/* ------------------------- energy sign-up (Ours tracker) ------------------------- */
+// Members can give this tracker a custom API key (only bars + cooldowns) at  ...exec?join=1
+// It then reads their energy and drug cooldown every 10 minutes into the same shared list the panel shows.
+// Keys are kept in this script's storage on the tracker owner's Google account and are only ever sent to api.torn.com.
+const JOIN_TITLE = 'NWA War Station';
+
+function joinPage() {
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+ body{margin:0;background:#0b0d0f;color:#e8e8e8;font:15px/1.5 -apple-system,Segoe UI,Arial,sans-serif}
+ .w{max-width:560px;margin:0 auto;padding:18px 16px 40px}
+ h1{font:800 22px/1.2 Impact,Arial Black,sans-serif;letter-spacing:1px;color:#ffb000;margin:6px 0 2px;text-transform:uppercase}
+ .sub{color:#9aa3ad;font-size:13px;margin-bottom:16px;border-bottom:2px solid #ffb000;padding-bottom:10px}
+ .card{background:#15191d;border:1px solid #2a3036;border-radius:8px;padding:14px;margin:12px 0}
+ .card h2{margin:0 0 8px;font-size:15px;color:#ffb000;text-transform:uppercase;letter-spacing:.5px}
+ a.btn,button{display:inline-block;border:0;border-radius:6px;padding:11px 14px;font:700 14px Arial;cursor:pointer;text-decoration:none}
+ a.btn{background:#ffb000;color:#111}
+ button.go{background:#ffb000;color:#111;width:100%}
+ button.rm{background:#2a3036;color:#e8e8e8;width:100%;margin-top:8px}
+ input{width:100%;box-sizing:border-box;padding:11px;border-radius:6px;border:1px solid #3a424a;background:#0b0d0f;color:#fff;font:15px monospace;margin:6px 0 10px}
+ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:5px 4px;border-top:1px solid #2a3036;vertical-align:top}td:first-child{color:#9aa3ad;width:38%}
+ #msg{margin-top:12px;font-weight:700}.ok{color:#7dd87d}.bad{color:#ff6b6b}
+ ol{padding-left:20px;margin:6px 0}
+</style></head><body><div class="w">
+<h1>${JOIN_TITLE} &middot; Energy sign-up</h1>
+<div class="sub">Share your energy and drug cooldown with your faction's war panel, around the clock.</div>
+<div class="card"><h2>1. Make a key</h2>
+<ol><li>Tap the button. Torn opens with a new <b>custom key</b> already filled in: it can only read your <b>energy/life bars</b> and <b>cooldowns</b>.</li>
+<li>Tap <b>Create</b>, then copy the new key.</li></ol>
+<a class="btn" href="https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=${encodeURIComponent(JOIN_TITLE)}&user=basic,bars,cooldowns" target="_blank" rel="noopener">Create my key on Torn</a></div>
+<div class="card"><h2>2. Paste it here</h2>
+<input id="k" maxlength="16" placeholder="16-character API key" autocomplete="off" autocapitalize="off" spellcheck="false">
+<button class="go" onclick="go('joinKey')">Share my energy &amp; drug cooldown</button>
+<button class="rm" onclick="go('leaveKey')">Stop sharing &amp; delete my key</button>
+<div id="msg"></div></div>
+<div class="card"><h2>What happens to your key</h2><table>
+<tr><td>Used for</td><td>Reading your energy and drug cooldown every 10 minutes, shown to faction members in the JSim War Station Plus panel.</td></tr>
+<tr><td>Stored</td><td>In this tracker's private storage on the faction leader's Google account. Not shown to anyone else.</td></tr>
+<tr><td>Sent to</td><td>Only api.torn.com.</td></tr>
+<tr><td>Access level</td><td>Custom: user basic, bars, cooldowns only. It can't see your items, money or messages.</td></tr>
+<tr><td>Who can join</td><td>Members of this faction only.</td></tr>
+<tr><td>Stop any time</td><td>Use "Stop sharing" above, or delete the key on Torn's API page.</td></tr>
+</table></div>
+<script>
+function go(fn){var k=document.getElementById('k').value.trim(),m=document.getElementById('msg');
+ if(!/^[A-Za-z0-9]{16}$/.test(k)){m.className='bad';m.textContent='That does not look like a Torn API key (16 letters and numbers).';return;}
+ m.className='';m.textContent='Checking with Torn...';
+ google.script.run.withSuccessHandler(function(r){m.className=r.ok?'ok':'bad';m.textContent=r.msg;if(r.ok)document.getElementById('k').value='';})
+  .withFailureHandler(function(e){m.className='bad';m.textContent='Something went wrong: '+e.message;})[fn](k);}
+</script></div></body></html>`;
+  return HtmlService.createHtmlOutput(html).setTitle(JOIN_TITLE + ' energy sign-up').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function keyCall(key, selections) {
+  const r = UrlFetchApp.fetch(`https://api.torn.com/user/?selections=${selections}&key=${encodeURIComponent(key)}&comment=WarStationEnergy`, { muteHttpExceptions: true });
+  return JSON.parse(r.getContentText());
+}
+function sharedRec(j, now) {
+  return { e: (j.energy && j.energy.current) || 0, em: (j.energy && j.energy.maximum) || 0, dc: (j.cooldowns && j.cooldowns.drug) || 0, at: now, src: 'key' };
+}
+
+// Called from the sign-up page
+function joinKey(key) {
+  key = String(key || '').trim();
+  if (!/^[A-Za-z0-9]{16}$/.test(key)) return { ok: false, msg: 'That is not a valid key.' };
+  let j;
+  try { j = keyCall(key, 'basic,bars,cooldowns'); } catch (err) { return { ok: false, msg: 'Could not reach Torn, try again in a minute.' }; }
+  if (j.error) return { ok: false, msg: 'Torn says: ' + j.error.error + '. Make sure the key has user basic, bars and cooldowns.' };
+  if (!j.player_id || !j.energy) return { ok: false, msg: 'The key works but can\'t read bars and cooldowns. Use the Create my key button.' };
+  const mine = api('faction/', 'basic');
+  if (!mine.members || !mine.members[j.player_id]) return { ok: false, msg: `${j.name}, you're not in ${mine.name || 'this faction'}, so this tracker can't take your key.` };
+  const P = PropertiesService.getScriptProperties(), now = Math.floor(Date.now() / 1000);
+  P.setProperty('k_' + j.player_id, JSON.stringify({ k: key, n: j.name, at: now, last: now, err: 0 }));
+  P.setProperty('sh_' + j.player_id, JSON.stringify(sharedRec(j, now)));
+  return { ok: true, msg: `Done, ${j.name}! Your energy (${j.energy.current}/${j.energy.maximum}) is now shared with ${mine.name}. It updates every 10 minutes.` };
+}
+function leaveKey(key) {
+  key = String(key || '').trim();
+  const P = PropertiesService.getScriptProperties(), all = P.getProperties();
+  for (const k in all) {
+    if (k.indexOf('k_') !== 0) continue;
+    try {
+      if (JSON.parse(all[k]).k === key) { P.deleteProperty(k); P.deleteProperty('sh_' + k.slice(2)); return { ok: true, msg: 'Your key has been deleted and sharing has stopped. You can also delete the key on Torn\'s API page.' }; }
+    } catch (err) { /* skip */ }
+  }
+  return { ok: false, msg: 'That key isn\'t stored here.' };
+}
+// Who has signed up (names only, never keys): ...exec?joined=1
+function joinedList() {
+  const all = PropertiesService.getScriptProperties().getProperties(), out = [];
+  for (const k in all) if (k.indexOf('k_') === 0) { try { const r = JSON.parse(all[k]); out.push({ id: k.slice(2), name: r.n, since: r.at, lastRead: r.last, errors: r.err || 0 }); } catch (err) { /* skip */ } }
+  return { count: out.length, members: out };
+}
+
+// Every run: read the keys that are due (each one every ~10 minutes, spread out to stay within Google's daily limits)
+function pollKeys(now) {
+  const P = PropertiesService.getScriptProperties(), all = P.getProperties();
+  const keys = Object.keys(all).filter(k => k.indexOf('k_') === 0).map(k => { try { return Object.assign({ p: k }, JSON.parse(all[k])); } catch (err) { return null; } }).filter(Boolean);
+  if (!keys.length) return;
+  const n = Math.min(12, Math.ceil(keys.length / 10) + 1);
+  const due = keys.filter(r => now - (r.last || 0) >= 540).sort((a, b) => (a.last || 0) - (b.last || 0)).slice(0, n);
+  if (!due.length) return;
+  const res = UrlFetchApp.fetchAll(due.map(r => ({ url: `https://api.torn.com/user/?selections=bars,cooldowns&key=${encodeURIComponent(r.k)}&comment=WarStationEnergy`, muteHttpExceptions: true })));
+  const put = {};
+  res.forEach((x, i) => {
+    const r = due[i], id = r.p.slice(2);
+    let j = null;
+    try { j = JSON.parse(x.getContentText()); } catch (err) { /* bad reply */ }
+    r.last = now;
+    if (!j || j.error) {
+      r.err = (r.err || 0) + 1;
+      const code = j && j.error ? j.error.code : 0;
+      // wrong/deleted key, key paused or owner inactive: stop using it
+      if (code === 2 || code === 13 || code === 18 || r.err >= 6) { P.deleteProperty(r.p); return; }
+    } else {
+      r.err = 0;
+      put['sh_' + id] = JSON.stringify(sharedRec(j, now));
+    }
+    const keep = { k: r.k, n: r.n, at: r.at, last: r.last, err: r.err };
+    put[r.p] = JSON.stringify(keep);
+  });
+  if (Object.keys(put).length) P.setProperties(put);
 }
 
 /* ------------------------- war activity ------------------------- */
@@ -299,6 +424,8 @@ function drugFigures(ps) {
 // War Status+ asks for data here
 function doGet(e) {
   const P = PropertiesService.getScriptProperties();
+  if (e.parameter.join) return joinPage();
+  if (e.parameter.joined) return json(joinedList());
   if (e.parameter.share) return json(shareIn(e.parameter));
   if (e.parameter.shared) return json(sharedReport());
   if (e.parameter.intel) return json(intelReport());
